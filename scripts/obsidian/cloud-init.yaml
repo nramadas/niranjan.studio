@@ -1,0 +1,161 @@
+#cloud-config
+# ─── Obsidian sync VM bootstrap ─────────────────────────────────────────────
+#
+# This file is consumed twice:
+#   1. By Terraform's templatefile() — which substitutes ${gcp_project_id},
+#      ${couchdb_secret_name}, ${couchdb_admin_user}, ${couchdb_db_name}.
+#      Terraform's only interpolation is dollar-brace-name; to emit a
+#      literal one (for docker compose to substitute later), double the
+#      leading dollar. Bare $VAR / $1 / $(...) have no braces and pass
+#      through to bash unchanged. Curl format strings like %%{http_code}
+#      collide with Terraform's %%{...} directive syntax — escape as %%{.
+#   2. By cloud-init on the VM at first boot.
+#
+# Idempotency: every step is safe to re-run. The CouchDB init script gates
+# itself on a marker file at /var/lib/obsidian/init.done.
+#
+# Package names: Debian 12 ships `docker.io` and `docker-compose-v2`. The
+# v2 plugin gives us the modern `docker compose` (no hyphen) syntax — the
+# same UX as Docker Inc.'s docker-compose-plugin, just under a different
+# package name.
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - docker.io
+  - docker-compose-v2
+  - curl
+  - ca-certificates
+  - jq
+  - google-cloud-cli
+
+write_files:
+  - path: /opt/obsidian/docker-compose.yml
+    permissions: '0644'
+    content: |
+      services:
+        couchdb:
+          image: couchdb:3.3
+          container_name: obsidian-couchdb
+          restart: unless-stopped
+          environment:
+            COUCHDB_USER: $${COUCHDB_USER}
+            COUCHDB_PASSWORD: $${COUCHDB_PASSWORD}
+          ports:
+            # Bind to localhost only. Public access goes via the Cloudflare
+            # tunnel, which dials into 127.0.0.1:5984 from this same host.
+            - "127.0.0.1:5984:5984"
+          volumes:
+            - /opt/obsidian/data:/opt/couchdb/data
+            - /opt/obsidian/etc:/opt/couchdb/etc/local.d
+
+  - path: /opt/obsidian/init-couchdb.sh
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      # First-time CouchDB setup for Obsidian LiveSync. Idempotent:
+      # gated by a marker file, and individual operations tolerate
+      # "already exists" (HTTP 412) responses.
+      set -euo pipefail
+
+      MARKER=/var/lib/obsidian/init.done
+      if [[ -f "$MARKER" ]]; then
+        echo "CouchDB already initialised (marker $MARKER present), skipping."
+        exit 0
+      fi
+
+      ENV_FILE=/opt/obsidian/.env
+      # shellcheck disable=SC1090
+      source "$ENV_FILE"
+
+      AUTH="$COUCHDB_USER:$COUCHDB_PASSWORD"
+      BASE=http://127.0.0.1:5984
+      DB_NAME="${couchdb_db_name}"
+
+      echo "Waiting for CouchDB /_up (up to ~120s)..."
+      for _ in $(seq 1 60); do
+        if curl -sf -u "$AUTH" "$BASE/_up" >/dev/null; then
+          break
+        fi
+        sleep 2
+      done
+      curl -sf -u "$AUTH" "$BASE/_up" >/dev/null \
+        || { echo "CouchDB did not respond on /_up within 120s"; exit 1; }
+
+      ensure_db() {
+        local db="$1"
+        local code
+        code=$(curl -s -o /dev/null -w '%%{http_code}' -X PUT -u "$AUTH" "$BASE/$db")
+        case "$code" in
+          201|202|412) echo "  $db: ok ($code)" ;;
+          *)           echo "  $db: failed ($code)"; exit 1 ;;
+        esac
+      }
+
+      put_config() {
+        local section="$1" key="$2" value="$3"
+        curl -sf -X PUT -u "$AUTH" \
+          -H 'Content-Type: application/json' \
+          --data "\"$value\"" \
+          "$BASE/_node/_local/_config/$section/$key" >/dev/null
+      }
+
+      echo "Creating system databases..."
+      ensure_db _users
+      ensure_db _replicator
+
+      echo "Configuring CouchDB for LiveSync..."
+      put_config chttpd      require_valid_user    true
+      put_config chttpd_auth require_valid_user    true
+      # Larger request size — Obsidian vaults sync big binary attachments.
+      put_config httpd       max_http_request_size 4294967296
+      put_config chttpd      max_http_request_size 4294967296
+
+      echo "Configuring CORS for Obsidian clients..."
+      put_config httpd  enable_cors true
+      put_config chttpd enable_cors true
+      put_config cors   credentials true
+      put_config cors   origins     "app://obsidian.md,capacitor://localhost,http://localhost"
+      put_config cors   methods     "GET, PUT, POST, HEAD, DELETE"
+      put_config cors   headers     "accept, authorization, content-type, origin, referer"
+
+      echo "Creating Obsidian database '$DB_NAME'..."
+      ensure_db "$DB_NAME"
+
+      mkdir -p "$(dirname "$MARKER")"
+      touch "$MARKER"
+      echo "CouchDB initialisation complete."
+
+runcmd:
+  - mkdir -p /opt/obsidian/data /opt/obsidian/etc /var/lib/obsidian
+  - systemctl enable --now docker
+  # Add UID 1000 to the docker group if it exists. With OS Login the user
+  # account is created at first SSH, so this may be a no-op at boot — that's
+  # fine; the cloud-init log notes it and `usermod` works again later.
+  - |
+    if id -u 1000 >/dev/null 2>&1; then
+      usermod -aG docker "$(id -un 1000)" || true
+    fi
+  # Pull the CouchDB password from Secret Manager on first boot only. The
+  # .env file is the on-disk record — if it's already present, we leave it
+  # alone so re-runs don't churn the file.
+  #
+  # POSIX `[ ]` not bash `[[ ]]` — cloud-init runcmd is executed by /bin/sh,
+  # which is dash on Ubuntu. Bash-only `[[` silently parses as a command and
+  # `[[: command not found` makes the if branch evaluate false, which is how
+  # this exact bug shipped once: env file got skipped, CouchDB came up with
+  # no credentials, init-couchdb.sh failed to source a missing .env.
+  - |
+    set -e
+    if [ ! -f /opt/obsidian/.env ]; then
+      umask 077
+      pw=$(gcloud secrets versions access latest \
+            --project='${gcp_project_id}' \
+            --secret='${couchdb_secret_name}')
+      printf 'COUCHDB_USER=%s\nCOUCHDB_PASSWORD=%s\n' \
+        '${couchdb_admin_user}' "$pw" > /opt/obsidian/.env
+      chmod 600 /opt/obsidian/.env
+    fi
+  - cd /opt/obsidian && docker compose up -d
+  - /opt/obsidian/init-couchdb.sh

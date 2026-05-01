@@ -1,0 +1,41 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Lockfile is intentionally tracked. Do NOT add .terraform.lock.hcl here.
+
+# Backend config (contains state bucket name)
+backend.hcl
+
+# Variables — keep only the example template
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# Secrets and env files — keep only example templates
+.env
+.env.*
+!.env.example
+
+# Cloudflare tunnel credentials
+*.json.cloudflared
+cert.pem
+*-cloudflared-credentials.json
+.cloudflared/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/

@@ -1,0 +1,31 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+
+# ─── GCP ────────────────────────────────────────────────────────────────────
+gcp_project_id = "your-gcp-project-id"
+
+# Free-tier-eligible regions only: us-east1, us-west1, us-central1.
+# Zone gotcha: us-east1 has no "-a" — its zones are b/c/d. us-west1: a/b/c.
+# us-central1: a/b/c/f. The variables file enforces this at plan time.
+gcp_region = "us-east1"
+gcp_zone   = "us-east1-b"
+
+# ─── Cloudflare ─────────────────────────────────────────────────────────────
+domain = "example.studio"
+
+# Final hostname becomes <vault_subdomain>.<domain>, e.g. vault.example.studio.
+vault_subdomain = "vault"
+
+# Create at https://dash.cloudflare.com/profile/api-tokens with:
+#   - Permissions: Zone → Zone:Read, Zone → DNS:Edit
+#   - Zone Resources: Include → Specific zone → <your domain>
+cloudflare_api_token = "REDACTED"
+
+# Leave empty on the FIRST `terraform apply` — the DNS record is skipped
+# until this is set. After running setup-tunnel.sh on the VM, paste the
+# tunnel UUID here and re-apply.
+cloudflare_tunnel_id = ""
+
+# ─── Obsidian (defaults are usually fine) ───────────────────────────────────
+# instance_name        = "obsidian-sync"
+# obsidian_db_name     = "obsidian"
+# obsidian_admin_user  = "obsidian"
