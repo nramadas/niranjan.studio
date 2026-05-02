@@ -39,6 +39,7 @@ Thumbs.db
 *~
 .idea/
 .vscode/
+.claude/worktrees
 
 # Node / TypeScript (services/obsidian-mcp)
 node_modules/
