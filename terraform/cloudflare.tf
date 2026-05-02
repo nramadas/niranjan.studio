@@ -29,3 +29,26 @@ resource "cloudflare_record" "vault" {
   ttl     = 1 # ttl=1 means "Auto", required when proxied
   comment = "Cloudflare Tunnel target for self-hosted Obsidian CouchDB"
 }
+
+# ─── MCP server hostname ────────────────────────────────────────────────────
+#
+# Phase 2 reuses the Phase 1 tunnel — the MCP server is a SECOND ingress rule
+# inside /etc/cloudflared/config.yml on the VM, pointing at the Cloud Run
+# URL instead of localhost:5984. The DNS record is just another CNAME into
+# the same .cfargotunnel.com host. Adding the ingress rule on the VM is
+# scripted: scripts/obsidian-mcp/add-tunnel-hostname.sh.
+#
+# Skipped on the first apply (same gating as `vault`) because there's nothing
+# for the CNAME to land on until the tunnel exists.
+
+resource "cloudflare_record" "mcp" {
+  count = var.cloudflare_tunnel_id == "" ? 0 : 1
+
+  zone_id = data.cloudflare_zone.main.id
+  name    = var.mcp_subdomain
+  content = "${var.cloudflare_tunnel_id}.cfargotunnel.com"
+  type    = "CNAME"
+  proxied = true
+  ttl     = 1
+  comment = "Cloudflare Tunnel target for the Obsidian MCP Cloud Run service"
+}

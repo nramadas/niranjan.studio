@@ -1,0 +1,11 @@
+# Keep the build context tiny. Only ship what's needed for `npm ci` + tsc.
+node_modules
+dist
+.env
+.env.*
+!.env.example
+*.log
+.git
+.gitignore
+.DS_Store
+README.md

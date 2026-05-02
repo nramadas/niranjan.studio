@@ -58,3 +58,50 @@ output "instance_name" {
   description = "VM name (mirrors the input variable, exposed for shell scripting)."
   value       = google_compute_instance.obsidian.name
 }
+
+# ─── Obsidian MCP server (Phase 2) ──────────────────────────────────────────
+
+output "obsidian_mcp_service_url" {
+  description = "Cloud Run URL of the MCP service (the *.run.app one). Public-facing clients should use https://<mcp_subdomain>.<domain> instead, which goes through Cloudflare Access."
+  value       = google_cloud_run_v2_service.obsidian_mcp.uri
+}
+
+output "obsidian_mcp_public_url" {
+  description = "Public URL Claude connects to. Resolves only after the second tunnel hostname and the Cloudflare Access policy are configured."
+  value       = "https://${var.mcp_subdomain}.${var.domain}"
+}
+
+output "obsidian_mcp_artifact_repo" {
+  description = "Artifact Registry repo URL used by scripts/obsidian-mcp/deploy.sh."
+  value       = "${google_artifact_registry_repository.obsidian_mcp.location}-docker.pkg.dev/${var.gcp_project_id}/${google_artifact_registry_repository.obsidian_mcp.repository_id}"
+}
+
+output "obsidian_mcp_service_account_email" {
+  description = "Service account attached to the Cloud Run MCP service."
+  value       = google_service_account.obsidian_mcp.email
+}
+
+output "obsidian_mcp_couchdb_user" {
+  description = "CouchDB username the MCP server authenticates as. Pair with the password from obsidian_mcp_couchdb_password_fetch_command."
+  value       = var.obsidian_mcp_couchdb_user
+}
+
+output "obsidian_mcp_couchdb_password_fetch_command" {
+  description = "Locally fetch the MCP server's CouchDB password (used by create-couchdb-user.sh)."
+  value       = "gcloud secrets versions access latest --project=${var.gcp_project_id} --secret=${google_secret_manager_secret.obsidian_mcp_couchdb_password.secret_id}"
+}
+
+output "obsidian_mcp_bearer_token_fetch_command" {
+  description = "Locally fetch the bearer token clients send in the Authorization header. Rotate it by adding a new Secret Manager version and re-deploying the Cloud Run revision."
+  value       = "gcloud secrets versions access latest --project=${var.gcp_project_id} --secret=${google_secret_manager_secret.obsidian_mcp_bearer_token.secret_id}"
+}
+
+output "obsidian_mcp_livesync_passphrase_set_command" {
+  description = "One-time command to populate the LiveSync E2EE passphrase. Run AFTER `terraform apply` and BEFORE deploying the server, with the same passphrase you typed into the LiveSync plugin."
+  value       = "printf '%s' '<paste passphrase here>' | gcloud secrets versions add ${google_secret_manager_secret.obsidian_livesync_passphrase.secret_id} --project=${var.gcp_project_id} --data-file=-"
+}
+
+output "obsidian_mcp_logs_command" {
+  description = "Tail Cloud Run logs for the MCP service."
+  value       = "gcloud run services logs tail obsidian-mcp --project=${var.gcp_project_id} --region=${var.gcp_region}"
+}

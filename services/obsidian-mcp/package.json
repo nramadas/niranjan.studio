@@ -1,0 +1,37 @@
+{
+  "name": "obsidian-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloud Run MCP server that exposes the Phase 1 Obsidian LiveSync vault to Claude.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsup",
+    "start": "node dist/main.js",
+    "dev": "tsx watch src/main.ts",
+    "lint": "biome check src",
+    "format": "biome format --write src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "effect": "^3.21.0",
+    "jose": "^6.2.3",
+    "nano": "^11.0.5",
+    "octagonal-wheels": "^0.1.45",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

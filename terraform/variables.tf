@@ -82,3 +82,29 @@ variable "cloudflare_tunnel_id" {
   description = "Tunnel ID (UUID) emitted by `cloudflared tunnel create` on the VM. Leave empty on the first apply; the DNS record is skipped until this is set."
   default     = ""
 }
+
+# ─── Obsidian MCP server (Phase 2) ──────────────────────────────────────────
+
+variable "mcp_subdomain" {
+  type        = string
+  description = "Subdomain that fronts the MCP Cloud Run service. Hostname becomes <mcp_subdomain>.<domain>."
+  default     = "mcp"
+}
+
+variable "obsidian_mcp_couchdb_user" {
+  type        = string
+  description = "CouchDB username used by the MCP server. Provisioned by scripts/obsidian-mcp/create-couchdb-user.sh with RW on the obsidian DB only — distinct from the Phase 1 admin user."
+  default     = "obsidian-mcp"
+}
+
+variable "cloudflare_access_team_domain" {
+  type        = string
+  description = "Cloudflare Access team domain, e.g. `your-team.cloudflareaccess.com`. The server fetches the JWKS at https://<team>/cdn-cgi/access/certs to verify the Cf-Access-Jwt-Assertion header."
+  default     = ""
+}
+
+variable "cloudflare_access_aud" {
+  type        = string
+  description = "Cloudflare Access application AUD tag (the `aud` JWT claim). Find it in the Cloudflare Zero Trust dashboard → Access → Applications → your MCP app → Overview."
+  default     = ""
+}
