@@ -1,7 +1,6 @@
-// Shape of LiveSync documents in CouchDB. A faithful (but minimal) subset
-// of the upstream `db.type.ts` from livesync-commonlib — only the fields
-// the MCP server reads or writes. See couchdb/livesync.ts for the format
-// notes.
+// Document and result types used across the couchdb module. These are
+// reused by multiple function-folders (CouchClient, Vault, isNoteDoc,
+// isChunkDoc), so they live at the module level per the styleguide.
 
 export type EntryType = "newnote" | "plain" | "leaf";
 
@@ -29,7 +28,30 @@ export interface ChunkDoc {
 
 export type AnyDoc = NoteDoc | ChunkDoc;
 
-export const isNoteDoc = (d: { type?: string }): d is NoteDoc =>
-  d.type === "newnote" || d.type === "plain";
+export interface ParsedFrontmatter {
+  readonly frontmatter: Record<string, unknown>;
+  readonly body: string;
+}
 
-export const isChunkDoc = (d: { type?: string }): d is ChunkDoc => d.type === "leaf";
+export interface NoteRead {
+  readonly path: string;
+  readonly _rev: string;
+  readonly frontmatter: Record<string, unknown>;
+  readonly body: string;
+  readonly mtime: number;
+  readonly ctime: number;
+  readonly size: number;
+}
+
+export interface NoteSummary {
+  readonly path: string;
+  readonly title: string;
+  readonly mtime: number;
+  readonly size: number;
+}
+
+export interface ChangeEvent {
+  readonly id: string;
+  readonly seq: string | number;
+  readonly deleted?: boolean;
+}

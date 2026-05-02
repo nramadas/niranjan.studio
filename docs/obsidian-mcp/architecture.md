@@ -59,7 +59,7 @@ If you want to rotate the passphrase: do it in the LiveSync plugin first on a si
 
 ## In-process layout
 
-The Cloud Run container runs a single Node 22 process with these long-lived components, wired with Effect.ts layers ([services/obsidian-mcp/src/main.ts](../../services/obsidian-mcp/src/main.ts)):
+The Cloud Run container runs a single Node 22 process with these long-lived components, wired with Effect.ts layers ([services/obsidian-mcp/src/main.ts](../../services/obsidian-mcp/src/main.ts)). The codebase layout is per-function-folder; see the [styleguide](styleguide.md) for the rules:
 
 ```
                    ┌────────────────────────────────────────┐
@@ -116,7 +116,7 @@ Notable details:
 
 The MCP server speaks LiveSync's CouchDB document format directly — note documents with `type: "newnote" | "plain"`, chunk documents (`type: "leaf"`, `_id` prefixed `h:`), and the path-obfuscation hashing scheme when E2EE is on.
 
-Encryption is delegated to `octagonal-wheels` (the same npm library the LiveSync plugin uses). The chunk-splitting and path-to-id derivation are reimplemented in [services/obsidian-mcp/src/couchdb/livesync.ts](../../services/obsidian-mcp/src/couchdb/livesync.ts). Both are faithful to the LiveSync source as of the version pinned in [troubleshooting.md](troubleshooting.md).
+Encryption is delegated to `octagonal-wheels` (the same npm library the LiveSync plugin uses). Each LiveSync primitive lives in its own function-folder under [services/obsidian-mcp/src/couchdb/](../../services/obsidian-mcp/src/couchdb/) — `decryptField/`, `encryptField/`, `path2id/`, `splitIntoChunks/`, `chunkId/`, `assembleChunks/`. Format-specific constants (chunk prefix `h:`, obfuscated-id prefix `f:`, the four encryption-prefix variants) live in `src/couchdb/constants.ts`. Both the primitives and the constants are faithful to the LiveSync source as of the version pinned in [troubleshooting.md](troubleshooting.md).
 
 If the LiveSync plugin's chunk format changes (it has evolved historically — V1 → V2 → HKDF-ephemeral), reads of existing notes may start failing with `DecryptionError` or returning blank bodies. The recovery is to bump the `octagonal-wheels` dependency and update the format-dispatch in `livesync.ts`. See troubleshooting.md for the recipe.
 

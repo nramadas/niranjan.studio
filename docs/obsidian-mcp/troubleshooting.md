@@ -42,7 +42,7 @@ Cost: roughly $5–10/month for an always-warm instance with `cpu_idle = true`. 
 
 ## LiveSync chunking format may have evolved
 
-The server's chunking + path-obfuscation logic in [services/obsidian-mcp/src/couchdb/livesync.ts](../../services/obsidian-mcp/src/couchdb/livesync.ts) is faithful to LiveSync as of:
+The server's chunking + path-obfuscation logic (split across [services/obsidian-mcp/src/couchdb/path2id/](../../services/obsidian-mcp/src/couchdb/path2id/), [splitIntoChunks/](../../services/obsidian-mcp/src/couchdb/splitIntoChunks/), [chunkId/](../../services/obsidian-mcp/src/couchdb/chunkId/), [decryptField/](../../services/obsidian-mcp/src/couchdb/decryptField/), and [encryptField/](../../services/obsidian-mcp/src/couchdb/encryptField/), with format constants in [constants.ts](../../services/obsidian-mcp/src/couchdb/constants.ts)) is faithful to LiveSync as of:
 
 - `octagonal-wheels` v0.1.45 (the npm dependency)
 - `vrtmrz/obsidian-livesync` ~v0.23.x (the plugin family)
@@ -53,8 +53,9 @@ Recovery recipe:
 
 1. Identify the new plugin version. Check `vrtmrz/obsidian-livesync` releases for chunk-format changes.
 2. Bump `octagonal-wheels` in [services/obsidian-mcp/package.json](../../services/obsidian-mcp/package.json) to the version the plugin depends on.
-3. If the chunk-splitting algorithm changed (vs. just the encryption format), update `splitIntoChunks` in `livesync.ts`.
-4. Round-trip test: create a note via `create_note`, open it in Obsidian, edit, save, then re-read via `read_note`. Body should match.
+3. If the chunk-splitting algorithm changed (vs. just the encryption format), update [services/obsidian-mcp/src/couchdb/splitIntoChunks/](../../services/obsidian-mcp/src/couchdb/splitIntoChunks/). If the encryption-format prefixes evolved, update [services/obsidian-mcp/src/couchdb/decryptField/](../../services/obsidian-mcp/src/couchdb/decryptField/) and [services/obsidian-mcp/src/couchdb/constants.ts](../../services/obsidian-mcp/src/couchdb/constants.ts).
+4. Update or extend the co-located tests in those folders to cover the new format.
+5. Round-trip test: create a note via `create_note`, open it in Obsidian, edit, save, then re-read via `read_note`. Body should match.
 
 ## Changes feed disconnects
 

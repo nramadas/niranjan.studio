@@ -18,28 +18,21 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Effect, Layer, Logger, LogLevel, ManagedRuntime, Redacted } from "effect";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
-import { allConfig } from "./config/env.js";
-import { CloudflareAccessAuthProviderLayer } from "./auth/cloudflare-access.js";
-import { DisabledAuthProviderLayer } from "./auth/disabled.js";
-import { AuthProvider, type AuthRequest } from "./auth/provider.js";
-import { CouchClient, CouchClientLayer } from "./couchdb/client.js";
-import { VaultLayer } from "./couchdb/vault.js";
-import { SearchIndex, SearchIndexLayer } from "./search/index.js";
-import { subscribeChanges } from "./couchdb/changes.js";
-import { buildMcpServer } from "./mcp/server.js";
-import { cloudRunLogger } from "./lib/logging.js";
+import {
+  AuthProvider,
+  CloudflareAccessAuthProviderLayer,
+  DisabledAuthProviderLayer,
+  types as authTypes,
+} from "./auth";
 
-const logLevelFor = (level: "debug" | "info" | "warn" | "error") =>
-  level === "debug"
-    ? LogLevel.Debug
-    : level === "info"
-      ? LogLevel.Info
-      : level === "warn"
-        ? LogLevel.Warning
-        : LogLevel.Error;
+type AuthRequest = authTypes.AuthRequest;
+import { allConfig } from "./config";
+import { CouchClient, CouchClientLayer, VaultLayer, subscribeChanges } from "./couchdb";
+import { cloudRunLogger } from "./lib";
+import { buildMcpServer } from "./mcp";
+import { SearchIndex, SearchIndexLayer } from "./search";
 
 const toAuthRequest = (req: IncomingMessage): AuthRequest => ({
   header: (name) => {
@@ -62,7 +55,9 @@ const main = Effect.gen(function* () {
 
   const couchLayer = CouchClientLayer(cfg.couchDb);
   const vaultLayer = VaultLayer(cfg.liveSync.passphrase).pipe(Layer.provide(couchLayer));
-  const searchLayer = SearchIndexLayer(cfg.search.rebuildDebounceMs).pipe(Layer.provide(vaultLayer));
+  const searchLayer = SearchIndexLayer(cfg.search.rebuildDebounceMs).pipe(
+    Layer.provide(vaultLayer),
+  );
   const authLayer =
     cfg.auth.provider === "cloudflare-access"
       ? CloudflareAccessAuthProviderLayer({
@@ -83,7 +78,7 @@ const main = Effect.gen(function* () {
     Effect.runFork(search.markDirty());
   });
 
-  const mcpServer: McpServer = buildMcpServer(innerRuntime);
+  const mcpServer = buildMcpServer(innerRuntime);
   const transport = new StreamableHTTPServerTransport({
     // Stateless mode: every request is independent. Good fit for a small
     // tool server where session state isn't useful and Cloud Run might
@@ -127,7 +122,11 @@ const main = Effect.gen(function* () {
       .then(async (identity) => {
         // Stuff identity onto the request for tools that want it (none yet,
         // but it's a useful affordance and matches MCP SDK's `auth` shape).
-        (req as IncomingMessage & { auth?: { token: string; clientId: string; scopes: string[]; extra: unknown } }).auth = {
+        (
+          req as IncomingMessage & {
+            auth?: { token: string; clientId: string; scopes: string[]; extra: unknown };
+          }
+        ).auth = {
           token: Redacted.value(cfg.auth.bearerToken),
           clientId: identity.email,
           scopes: [],
@@ -186,11 +185,3 @@ Effect.runPromise(
   // Effect.never never resolves, so we shouldn't be here. Belt-and-braces:
   process.exit(0);
 });
-
-// Ensure the LOG_LEVEL env var is honoured at runtime.
-const desired = process.env.LOG_LEVEL;
-if (desired && ["debug", "info", "warn", "error"].includes(desired)) {
-  // The log level is set at the runtime layer above; this `desired` shim
-  // is only here so future code that reads it doesn't have to re-parse.
-  void logLevelFor(desired as "debug" | "info" | "warn" | "error");
-}

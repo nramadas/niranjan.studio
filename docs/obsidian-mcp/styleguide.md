@@ -68,17 +68,41 @@ src/couchdb/CouchClient/
 └── index.test.ts     # tests CouchClient
 ```
 
-Imports come from the folder, not the file:
+Imports come from the folder, not the file (see the "Imports" section below for the full rules):
 
 ```ts
-import { decryptField } from "../couchdb/decryptField/index.js";
-// or, with a path-mapping alias:
-import { decryptField } from "@/couchdb/decryptField";
+import { decryptField } from "../couchdb/decryptField";
 ```
 
 Folders contain **only** the index file, the test file, and any private helper files that are not exported (if they grow large enough to warrant their own file, they get their own folder per rule 1).
 
 Why the folder, not just `decryptField.ts`? Because rule 4 requires a co-located test file, and rule 1 forbids stuffing tests into the same file as the implementation. The folder is the unit that holds both. It's also the unit you move when you relocate the function: `git mv` the folder, update the import paths, done.
+
+### Nested folder grouping is encouraged
+
+Module folders can contain other module folders. When a set of related exports inside a module starts to outweigh the rest of the module, group them into a sub-folder rather than letting the parent's directory listing balloon.
+
+Example: this codebase has eight tagged error classes. They were originally siblings of `cloudRunLogger/` directly under `src/lib/`. That made `src/lib/` a wall of error folders interrupted by one logger. They are now grouped under `src/lib/errors/`:
+
+```
+src/lib/
+├── cloudRunLogger/
+├── errors/
+│   ├── AuthError/
+│   ├── ChangesFeedError/
+│   ├── CouchDbError/
+│   ├── DecryptionError/
+│   ├── EncryptionError/
+│   ├── NoteConflictError/
+│   ├── NoteNotFoundError/
+│   ├── ValidationError/
+│   └── index.ts          ← barrel for the errors sub-module
+└── index.ts              ← `lib` barrel; re-exports `./errors` and `./cloudRunLogger`
+```
+
+The grouping criterion is "would a reader see this and want to scan it as a unit?" For tagged errors, yes — they share a shape (`Data.TaggedError(...)`), they're often imported together, and they're a natural conceptual group. The cost of one extra folder level is paid for by a parent directory listing that reads cleanly.
+
+Don't over-nest: a single error or two doesn't need its own folder. The threshold is roughly five-plus related items, OR a clear conceptual boundary that a reader would benefit from seeing as a group. When in doubt, leave them flat — promotion is cheap.
 
 ### Module folders use kebab-case
 
@@ -88,30 +112,96 @@ The visual rule is: if a folder's children are all themselves folders (or barrel
 
 ### Module folders contain a barrel `index.ts`
 
-A module folder contains an `index.ts` whose only job is to re-export the public surface of every child folder it contains. This lets consumers import from the module rather than from individual child folders:
+A module folder contains an `index.ts` whose only job is to re-export the public surface of every child folder it contains. This lets consumers import from the module rather than from individual child folders.
+
+There are three re-export shapes, and which one you use depends on what the child is:
+
+1. **Function/class folders → flat re-export.** Use `export * from './childFolder'`. Named-export lists (`export { foo } from "./foo"`) are not used — they bit-rot when a child folder gains a new export, and the maintenance cost over a year is real. With `export *`, adding a new function to the module is a one-line barrel update.
+
+2. **Module-level `types.ts` and `constants.ts` → namespaced re-export.** Use `export * as types from './types.ts'` and `export * as constants from './constants.ts'`. This keeps the module's flat exports a list of *functions and classes*, with type definitions accessed via `types.Foo` and constants via `constants.PREFIX_CHUNK`. Autocomplete on `import { … } from "./couchdb"` shows you only callable things, and reading a consumer's import line tells you immediately whether you're pulling in code or a type.
+
+3. **Nested sub-module folders → namespaced re-export, named after the folder.** Use `export * as <folderName> from './<folderName>'`. So `lib/errors/` is re-exported from `lib/index.ts` as `export * as errors from "./errors";`, and `mcp/tools/` is re-exported from `mcp/index.ts` as `export * as tools from "./tools";`. Consumers reach `errors.AuthError` and `tools.listNotes`. Same reasoning as types/constants — namespacing the sub-module keeps the parent's flat exports focused on the parent's *own* functions/classes, with related collections accessible under a clear handle. It also avoids name collisions when two sibling sub-modules might export the same name.
 
 ```ts
-// src/couchdb/index.ts — barrel export
-export { decryptField } from "./decryptField/index.js";
-export { encryptField } from "./encryptField/index.js";
-export { CouchClient } from "./CouchClient/index.js";
-export { path2id } from "./path2id/index.js";
+// src/couchdb/index.ts — module barrel with all three forms
+export * from "./decryptField";        // function folder → flat
+export * from "./encryptField";
+export * from "./CouchClient";         // class folder → flat
+export * from "./path2id";
+// ...other function/class folders...
+export * as types from "./types.ts";       // module-level types → namespaced
+export * as constants from "./constants.ts"; // module-level constants → namespaced
 ```
 
 ```ts
-// consumer
-import { decryptField, encryptField, CouchClient } from "@/couchdb";
+// src/lib/index.ts — barrel with a nested sub-module
+export * from "./cloudRunLogger";        // function folder → flat
+export * as errors from "./errors";       // sub-module folder → namespaced
 ```
 
-Barrel files contain no logic — only re-exports. They don't get a `.test.ts` (there's nothing to test). When a new function-folder is added inside a module, the module's barrel is updated in the same change.
+```ts
+// src/mcp/index.ts — barrel with a nested sub-module + types
+export * from "./buildMcpServer";
+export * from "./runTool";
+export * as types from "./types.ts";
+export * as tools from "./tools";        // sub-module folder → namespaced
+```
 
-A grouping folder may also contain shared types and constants that are used across multiple functions inside it (`types.ts`, `constants.ts`) — these are not functions or classes, so they don't need their own folder. The barrel re-exports them too if they're part of the module's public surface.
+```ts
+// consumer of lib
+import { cloudRunLogger, errors } from "../lib";
+throw new errors.AuthError({ reason: "missing header", statusCode: 401 });
+```
+
+```ts
+// consumer of mcp
+import { buildMcpServer, tools, types } from "../mcp";
+const server = buildMcpServer(runtime);
+const myTool = tools.listNotes(runtime);
+type Result = types.ToolResult;
+```
+
+Barrel files contain no logic — only re-exports. They don't get a `.test.ts` (there's nothing to test). When a new function-folder is added inside a module, the module's barrel is updated in the same change. With `export *`, that update is one line.
+
+The nested sub-module's *own* barrel (`src/lib/errors/index.ts`, `src/mcp/tools/index.ts`) follows the function/class rule for its own children — flat `export *`. The namespacing happens once, at the parent that re-exports the sub-module.
+
+#### Internal imports stay direct
+
+The barrel-based imports are for *consumers* of a module. **Code inside the same module imports its dependencies directly** — `from "../types.ts"` for the module's shared types, `from "../sibling-function"` for a sibling function-folder. Going through the parent barrel from a sibling would produce circular import warnings and would force the namespaced (`types.Foo`) form for type access at the cost of readability. Reserve the barrel for crossing module boundaries.
+
+## Imports
+
+Two rules:
+
+1. **A folder import resolves to that folder's `index.ts`.** Write `from "./decryptField"`, not `from "./decryptField/index.ts"` and not `from "./decryptField/index.js"`. Both the explicit forms work but read as boilerplate; the folder import is the canonical style and matches how the barrels themselves re-export.
+2. **A direct file import uses the source extension `.ts`** (or `.tsx` etc., for whatever the file actually is). Write `from "../types.ts"`, not `from "../types.js"`. Imports name source files; the build pipeline resolves them.
+
+```ts
+// good
+import { decryptField } from "../decryptField";
+import type { NoteDoc } from "../types.ts";
+
+// bad — verbose, leaks the resolution mechanism
+import { decryptField } from "../decryptField/index.ts";
+import { decryptField } from "../decryptField/index.js";
+
+// bad — `.js` is the emit extension, not the source extension
+import type { NoteDoc } from "../types.js";
+```
+
+These rules require:
+
+- **`tsconfig.json`** with `"moduleResolution": "Bundler"`, `"module": "Preserve"`, `"allowImportingTsExtensions": true`, and `"noEmit": true`. tsc only typechecks; it never emits the runtime artefact.
+- **A bundler for production builds.** This service uses [tsup](https://tsup.egoist.dev/) (a thin wrapper around esbuild) configured in `tsup.config.ts` to produce a single bundled `dist/main.js`. `npm run build` invokes it. Vite, esbuild directly, swc, or any other Node-targeting bundler is also fine — the requirement is "something that resolves bundler-style imports."
+- **A TS-aware dev runner.** Both `tsx` (used here) and Vite/Vitest natively understand folder imports and `.ts` extensions, so `npm run dev` and `npm test` need no extra config.
+
+The reason the runtime can't be plain `node dist/main.js` of tsc-emitted output: Node's CommonJS/ESM resolvers don't do folder imports (no implicit `index.js` lookup) and don't know about `.ts` source files. The bundler bridges that gap by inlining everything into one entry that has only fully-resolved JS dependencies left.
 
 ## 4. Each function-folder also contains a test file
 
 Beside `index.ts`, there is `index.test.ts` (or whatever the test framework's naming convention is — Vitest and Jest both accept `.test.ts`).
 
-The test file imports the function from `./index.js` and exercises it. Tests do not reach across function-folders. If a test needs a helper from a sibling function-folder, that helper is being treated as a public dependency — re-import it via its public path, don't dig into its internals.
+The test file imports the function from `./index.ts` and exercises it. Tests do not reach across function-folders. If a test needs a helper from a sibling function-folder, that helper is being treated as a public dependency — re-import it via its public path, don't dig into its internals.
 
 A function-folder without a test file is incomplete. New code lands with its tests; tests are not a follow-up. If the function is genuinely untestable in isolation (it's a thin wrapper over a third-party library), the test file still exists and contains a single test asserting the wrapper's contract — `expect(typeof fn).toBe("function")` is not enough; assert behaviour through a stub.
 
@@ -121,7 +211,7 @@ A test file tests **only** the function in its own folder. It does not test sibl
 
 Concretely, a test in `src/couchdb/decryptField/index.test.ts`:
 
-- Imports `decryptField` from `./index.js` (or `./index.ts`, depending on tsconfig moduleResolution).
+- Imports `decryptField` from `./index.ts` (per the Imports section above).
 - Imports test fixtures from a shared location, not from sibling function-folders.
 - May stub or mock dependencies, but does not directly invoke other public functions to set up state. If setup is complex, factor the setup into a fixture file.
 

@@ -6,7 +6,7 @@ If you are setting up the *current* (Cloudflare Access) auth from scratch, this 
 
 ## 1. Why auth is structured this way
 
-The MCP server has a single explicit abstraction at the auth boundary: an `AuthProvider` interface. Concretely (in [services/obsidian-mcp/src/auth/provider.ts](../../services/obsidian-mcp/src/auth/provider.ts)):
+The MCP server has a single explicit abstraction at the auth boundary: an `AuthProvider` interface (the Effect Context tag in [services/obsidian-mcp/src/auth/AuthProvider/](../../services/obsidian-mcp/src/auth/AuthProvider/), with the `AuthProviderImpl` shape declared in [services/obsidian-mcp/src/auth/types.ts](../../services/obsidian-mcp/src/auth/types.ts)):
 
 ```ts
 interface AuthProviderImpl {
@@ -69,7 +69,7 @@ The signing keys are published as a JWKS at:
 https://<team-name>.cloudflareaccess.com/cdn-cgi/access/certs
 ```
 
-Verification rules the server applies (see [services/obsidian-mcp/src/auth/cloudflare-access.ts](../../services/obsidian-mcp/src/auth/cloudflare-access.ts)):
+Verification rules the server applies (see [services/obsidian-mcp/src/auth/CloudflareAccessAuthProviderLayer/](../../services/obsidian-mcp/src/auth/CloudflareAccessAuthProviderLayer/)):
 
 - Algorithm must be `RS256`. Other algs are rejected.
 - `iss` must match the configured team domain.
@@ -88,10 +88,11 @@ A request that fails either check is rejected with `401` (missing) or `403` (mis
 
 The general shape of an auth provider migration:
 
-1. **Implement a new `AuthProvider`** at `services/obsidian-mcp/src/auth/<your-provider>.ts`. The pattern is:
-   - A `<YourProvider>Config` type.
+1. **Implement a new `AuthProvider`** at `services/obsidian-mcp/src/auth/<YourProviderAuthProviderLayer>/index.ts` (with co-located `index.test.ts` per the [styleguide](styleguide.md)). The pattern is:
+   - A `<YourProvider>Config` type co-located in the same file.
    - A `<YourProvider>AuthProviderLayer(cfg)` that returns a `Layer.succeed(AuthProvider, impl)`.
-   - The implementation runs the bearer-token check first (call `verifyBearerToken` from [services/obsidian-mcp/src/auth/bearer.ts](../../services/obsidian-mcp/src/auth/bearer.ts)), then validates the upstream provider's assertion, then returns an `Identity { email, source: "<your-provider>" }`.
+   - The implementation runs the bearer-token check first (call `verifyBearerToken` from [services/obsidian-mcp/src/auth/verifyBearerToken/](../../services/obsidian-mcp/src/auth/verifyBearerToken/)), then validates the upstream provider's assertion, then returns an `Identity { email, source: "<your-provider>" }`.
+   - Add the new layer to the module barrel at [services/obsidian-mcp/src/auth/index.ts](../../services/obsidian-mcp/src/auth/index.ts) with `export * from "./<YourProviderAuthProviderLayer>";`.
 
 2. **Switch the layer wired into [main.ts](../../services/obsidian-mcp/src/main.ts)**. Replace the `CloudflareAccessAuthProviderLayer({…})` instantiation with the new one. The `AUTH_PROVIDER` env var becomes the new value and the conditional in main.ts dispatches to it.
 

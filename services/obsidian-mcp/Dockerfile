@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1.7
 
 # ─── Build stage ────────────────────────────────────────────────────────────
-# Compile TypeScript to dist/ in a fat image, then drop everything except
-# the build output and runtime dependencies into the runtime stage.
+# Bundle TypeScript via tsup (esbuild under the hood) into a single
+# dist/main.js that imports its npm deps at runtime, then drop everything
+# except the bundle and the pruned node_modules into the runtime stage.
 
 FROM node:22-bookworm-slim AS build
 
@@ -11,7 +12,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 
-COPY tsconfig.json biome.json ./
+COPY tsconfig.json tsup.config.ts biome.json ./
 COPY src ./src
 
 RUN npm run build && npm prune --omit=dev
