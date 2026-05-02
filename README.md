@@ -5,8 +5,7 @@ Terraform and supporting scripts for personal cloud infrastructure on GCP. The r
 ## Current projects
 
 - **Obsidian sync** (Phase 1): self-hosted CouchDB on a GCE `e2-micro` VM, exposed via Cloudflare Tunnel, syncing to Obsidian on Mac, iPad, and iPhone via the Self-hosted LiveSync plugin. See [docs/obsidian/setup.md](docs/obsidian/setup.md).
-
-A future Phase 2 will add a Cloud Run MCP server that reads and writes the same vault on behalf of Claude.
+- **Obsidian MCP server** (Phase 2): a Cloud Run service that exposes the same vault to Claude over the Model Context Protocol. Reads and writes encrypted notes through the LiveSync E2EE format, fronted by the same Cloudflare Tunnel under a second hostname, gated by Cloudflare Access plus a server-side bearer token. See [docs/obsidian-mcp/setup.md](docs/obsidian-mcp/setup.md).
 
 ## Read this before you spend money
 
@@ -49,22 +48,38 @@ personal-infra/
 │   ├── variables.tf                  Input variables.
 │   ├── outputs.tf                    SSH command, IP, secret-fetch command.
 │   ├── obsidian.tf                   VM, service account, password secret.
-│   ├── cloudflare.tf                 DNS record for vault.<domain>.
+│   ├── obsidian-mcp.tf               Cloud Run MCP service, secrets, IAM, image repo.
+│   ├── cloudflare.tf                 DNS records for vault.<domain> and mcp.<domain>.
 │   └── terraform.tfvars.example      Template (real .tfvars is gitignored).
+├── services/
+│   └── obsidian-mcp/                 TypeScript Cloud Run service (Effect.ts + MCP SDK).
 ├── scripts/
 │   ├── bootstrap-state-bucket.sh     One-time: create the GCS state bucket.
 │   ├── obsidian/
 │   │   ├── cloud-init.yaml           Full VM bootstrap.
 │   │   └── setup-tunnel.sh           Run-once on the VM: cloudflared setup.
+│   ├── obsidian-mcp/
+│   │   ├── create-couchdb-user.sh    Provisions the scoped MCP CouchDB user.
+│   │   ├── add-tunnel-hostname.sh    Adds the second tunnel ingress to the VM.
+│   │   ├── deploy.sh                 Builds, pushes, and rolls a new Cloud Run revision.
+│   │   └── test-local.sh             Runs the server locally against the prod CouchDB.
 │   └── lib/
 │       └── common.sh                 Shared bash helpers.
 └── docs/
     ├── runbook.md                    State, secrets, new projects, teardown.
-    └── obsidian/
-        ├── setup.md                  Phase 1 walkthrough.
-        ├── tunnel-setup.md           Manual cloudflared steps explained.
-        ├── client-setup.md           LiveSync on Mac, iPad, iPhone.
-        └── troubleshooting.md        Common failure modes.
+    ├── obsidian/
+    │   ├── setup.md                  Phase 1 walkthrough.
+    │   ├── tunnel-setup.md           Manual cloudflared steps explained.
+    │   ├── client-setup.md           LiveSync on Mac, iPad, iPhone.
+    │   └── troubleshooting.md        Common failure modes.
+    └── obsidian-mcp/
+        ├── setup.md                  Phase 2 walkthrough end to end.
+        ├── architecture.md           Request flow, trust boundaries.
+        ├── auth.md                   Auth design and migration recipe.
+        ├── access-setup.md           Cloudflare Access policy walkthrough.
+        ├── tools.md                  MCP tool reference.
+        ├── claude-connection.md      How to add the connector in Claude.
+        └── troubleshooting.md        Common Phase 2 failure modes.
 ```
 
 When adding a new project: a new `terraform/<project>.tf`, a new `scripts/<project>/`, and a new `docs/<project>/`. The runbook has the checklist.

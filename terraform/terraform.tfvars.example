@@ -29,3 +29,24 @@ cloudflare_tunnel_id = ""
 # instance_name        = "obsidian-sync"
 # obsidian_db_name     = "obsidian"
 # obsidian_admin_user  = "obsidian"
+
+# ─── Obsidian MCP server (Phase 2) ──────────────────────────────────────────
+# Final hostname becomes <mcp_subdomain>.<domain>, e.g. mcp.example.studio.
+# mcp_subdomain             = "mcp"
+
+# Username the MCP server uses against CouchDB. A scoped account with RW on
+# the obsidian DB only — distinct from the admin user, provisioned by
+# scripts/obsidian-mcp/create-couchdb-user.sh.
+# obsidian_mcp_couchdb_user = "obsidian-mcp"
+
+# Cloudflare Access team domain. Find it at
+# https://one.dash.cloudflare.com → Settings → Custom Pages → Team domain.
+# Looks like `your-team.cloudflareaccess.com` (no scheme, no path).
+cloudflare_access_team_domain = ""
+
+# Cloudflare Access application AUD tag for the MCP application. Cloudflare
+# generates this when you create the Access app in the Zero Trust dashboard
+# (Access → Applications → your app → Overview → "Application Audience (AUD) Tag").
+# Leave empty until you've created the Access application in step 5 of
+# docs/obsidian-mcp/setup.md, then re-apply.
+cloudflare_access_aud = ""
