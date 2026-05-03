@@ -19,7 +19,7 @@ const config = {
 };
 
 const handler = (runtime: ServerRuntime) => async (args: { path: string }) =>
-  runTool(runtime)(
+  runTool(runtime, "read_note")(
     Effect.gen(function* () {
       const vault = yield* Vault;
       return yield* vault.readNote(args.path);

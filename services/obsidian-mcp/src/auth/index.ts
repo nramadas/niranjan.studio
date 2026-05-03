@@ -2,7 +2,5 @@
 // module-level shared types are namespaced under `types`.
 
 export * from "./AuthProvider";
-export * from "./CloudflareAccessAuthProviderLayer";
-export * from "./DisabledAuthProviderLayer";
-export * from "./verifyBearerToken";
+export * from "./OAuthAuthProviderLayer";
 export * as types from "./types.ts";

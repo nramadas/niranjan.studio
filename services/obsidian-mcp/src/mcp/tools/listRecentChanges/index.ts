@@ -22,7 +22,7 @@ const config = {
 };
 
 const handler = (runtime: ServerRuntime) => async (args: { limit?: number }) =>
-  runTool(runtime)(
+  runTool(runtime, "list_recent_changes")(
     Effect.gen(function* () {
       const vault = yield* Vault;
       return yield* vault.listRecent(args.limit ?? 20);

@@ -16,7 +16,7 @@ const config = {
 };
 
 const handler = (runtime: ServerRuntime) => async (args: { path: string }) =>
-  runTool(runtime)(
+  runTool(runtime, "delete_note")(
     Effect.gen(function* () {
       const vault = yield* Vault;
       yield* vault.deleteNote(args.path);

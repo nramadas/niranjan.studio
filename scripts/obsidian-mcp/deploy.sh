@@ -112,7 +112,7 @@ Tail logs:
 Hit health check (no auth required):
   CLOUD_RUN_URL=\$(gcloud run services describe ${SERVICE} \
     --project=${PROJECT} --region=${REGION} --format='value(status.url)')
-  curl -i "\${CLOUD_RUN_URL}/healthz"
+  curl -i "\${CLOUD_RUN_URL}/health"
 ────────────────────────────────────────────────────────────────────────
 EOF
 }

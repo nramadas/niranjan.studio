@@ -28,7 +28,7 @@ const config = {
 const handler =
   (runtime: ServerRuntime) =>
   async (args: { path: string; body: string; frontmatter?: Record<string, unknown> }) =>
-    runTool(runtime)(
+    runTool(runtime, "create_note")(
       Effect.gen(function* () {
         const vault = yield* Vault;
         return yield* vault.createNote(args.path, args.body, args.frontmatter);

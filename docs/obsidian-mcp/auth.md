@@ -1,214 +1,183 @@
-# Auth: design, trust model, and how to migrate to a different provider
+# Auth: design, trust model, and how to migrate to a different OIDC provider
 
-This document is written for **a future agent or human migrating the MCP server's authentication layer to a different provider** — most likely GCP IAP, possibly self-hosted OIDC (Authentik) or a hosted OIDC provider (WorkOS, Clerk, Auth0). It is meant to be read as a self-contained document. You do not need to have read [setup.md](setup.md) first; cross-references are provided where useful.
+This document is written for **a future agent or human migrating the human-auth step away from Google OIDC** — likely to a self-hosted OIDC provider (Authentik, Keycloak), a hosted one (WorkOS, Clerk, Auth0, Microsoft Entra ID), or back to Cloudflare Access if that ever becomes attractive again. It is meant to be read as a self-contained document. You do not need to have read [setup.md](setup.md) first; cross-references are provided where useful.
 
-If you are setting up the *current* (Cloudflare Access) auth from scratch, this is the wrong document — read [access-setup.md](access-setup.md) for that.
+If you are setting up the *current* (Google OIDC) auth from scratch, this is the wrong document — read [setup.md](setup.md) §4 for that. Implementation details of the OAuth server itself live in [oauth.md](oauth.md).
 
 ## 1. Why auth is structured this way
 
-The MCP server has a single explicit abstraction at the auth boundary: an `AuthProvider` interface (the Effect Context tag in [services/obsidian-mcp/src/auth/AuthProvider/](../../services/obsidian-mcp/src/auth/AuthProvider/), with the `AuthProviderImpl` shape declared in [services/obsidian-mcp/src/auth/types.ts](../../services/obsidian-mcp/src/auth/types.ts)):
+The MCP server is its own OAuth 2.1 + DCR + PKCE authorization server. It issues access tokens (JWTs) that gate `/mcp`. The authorization server itself delegates the *human authentication* step — "is this person actually them" — to an external OIDC provider, currently Google. Two pieces, separable:
 
-```ts
-interface AuthProviderImpl {
-  readonly name: string;
-  readonly validateRequest: (req: AuthRequest) => Effect.Effect<Identity, AuthError>;
-}
+```
+Claude  ←──OAuth tokens──→  obsidian-mcp's OAuth server  ←──OIDC──→  Google
+                                 (we own this)                       (swappable)
 ```
 
-Everything downstream of this — the MCP transport, the tool handlers, the CouchDB client, the search index — knows nothing about Cloudflare Access. They see only an authenticated `Identity { email, source }`. Replacing the provider is a layer swap in [main.ts](../../services/obsidian-mcp/src/main.ts), not a server rewrite.
+Everything downstream of the OAuth server — the MCP transport, the tool handlers, the CouchDB client, the search index — knows nothing about Google. They see only an authenticated `Identity { email, source }`. Replacing the OIDC provider is a matter of swapping the implementation of the `googleOidc/` sub-module (or adding a sibling sub-module and selecting between them in `handleAuthorize` / `handleGoogleCallback`).
 
-This abstraction is deliberate. The cost is roughly thirty extra lines of code over hard-coding Cloudflare Access. The benefit is that when the time comes to migrate — Cloudflare Access free-tier limits, a switch to a corporate SSO, a privacy-driven move to self-hosted identity — you add a sibling `AuthProvider` implementation and flip a layer wire. You should resist the temptation to "simplify" by inlining provider-specific logic into request handlers. If you find yourself wanting to do that, the abstraction is still earning its keep — that's exactly the leak it prevents.
+Why this shape: the OAuth server has to be ours because Claude expects an OAuth 2.1 endpoint at the MCP host, with discovery and dynamic client registration per the MCP authorization spec. We can't outsource that — the resource server and the auth server share an origin in our deployment, and the discovery document advertises endpoints on `mcp.<domain>`. The IdP can be outsourced because the only thing we need from it is "this email belongs to a human who just proved their identity". Google's OIDC implementation does that fine; so does any other OIDC provider.
 
 ## 2. The trust model
-
-This is the part that matters when you reason about whether a migration preserves security properties.
 
 The MCP server holds the LiveSync end-to-end encryption passphrase in Secret Manager and decrypts notes inside its own process before returning them to Claude. **Authentication to the server is the gate that protects the contents of your vault.** If the auth layer is misconfigured or bypassed, anyone reaching the endpoint can read every note.
 
 Trust boundaries today, from outside to inside:
 
-1. **Cloudflare's edge** terminates TLS and enforces Cloudflare Access policies. A request that doesn't match an Access policy is bounced at the edge and never reaches the origin. This is the first gate.
-2. **The Cloudflare Tunnel** carries the request from the edge into the e2-micro VM, then over plain HTTP back out to the Cloud Run service. The tunnel is mutually authenticated between cloudflared on the VM and Cloudflare's edge; nothing on the public internet can speak to the origin directly.
-3. **The Cloud Run service** validates two independent things on every request:
-   - The `Cf-Access-Jwt-Assertion` JWT, signed by Cloudflare Access using a key from the team's JWKS, with `aud` and `iss` checks. This catches the cases where someone reaches the Cloud Run hostname directly (it has `allUsers` invoker, by design — see step 4 below).
-   - A bearer token in the `Authorization` header, generated by Terraform and stored in Secret Manager, compared in constant time against the request value.
-4. **The Cloud Run service's invoker IAM** is `allUsers`. This is intentional. If we used IAM-gated invocation, the upstream Cloudflare Tunnel would have to mint a Google-issued OIDC token to call into Cloud Run, which complicates the request path with no security benefit (Access already proved who the caller is). Putting auth at the edge plus inside the server is the standard pattern; relying on Cloud Run IAM as well would be the third lock on the same door, which mostly means the door's harder to open when you need to.
+1. **Cloud Run's anycast frontend** terminates TLS for `mcp.<domain>` with a Google-managed cert. Cloud Run's invoker IAM is `allUsers` — auth is enforced inside the server.
+2. **The OAuth server inside the container** validates that every `/mcp` request carries an access token JWT signed by our own RSA-2048 key, with the correct `iss`, `aud`, `exp`, and `type: "access_token"` claims. A bare request to `/mcp` returns 401 with a `WWW-Authenticate` header pointing at `/.well-known/oauth-protected-resource` — the protocol's "you need to start the OAuth dance" handshake.
+3. **The OAuth server's `/authorize` flow** delegates human authentication to Google OIDC. After Google signs the user in and returns an `id_token`, we verify it against Google's JWKS, extract the `email` claim, and check it against the `mcp_allowed_emails` allow-list before issuing our own tokens. The list is the only thing standing between Google's billion accounts and your vault.
+4. **The OAuth signing key** lives in Secret Manager and is mounted into the Cloud Run container at request time. Rotating it (re-running `generate-oauth-key.sh`) implicitly invalidates every token that's been issued, because the kid changes and validation fails.
+5. **The Google OAuth client secret** also lives in Secret Manager. We use it to authenticate to Google's `/token` endpoint when exchanging the authorization code for an `id_token`. It's not a long-lived shared secret with users — it's a server-side credential between us and Google.
 
-Any auth migration **MUST preserve at least the security properties of this setup**. Practically, that means:
+Any auth migration **MUST preserve at least these properties**:
 
-- The replacement provider must enforce identity at the network edge. If you can talk to the Cloud Run hostname over the public internet without proving who you are, you've regressed.
-- The bearer token check must remain. It is provider-independent and covers the case where the upstream provider gets misconfigured.
-- The Cloud Run service must continue to validate the upstream provider's identity assertion *inside the server*, not trust a header at face value. Headers can be spoofed if someone reaches the origin directly.
+- **Identity must be verified server-side, not trusted from a header.** Whichever OIDC provider you use, you have to verify the `id_token` against the provider's JWKS — never trust a forwarded "X-User-Email" header at face value.
+- **The email allow-list stays.** Or some equivalent gating. An OIDC provider sign-in alone is not enough; we need a list of *which* identities are allowed.
+- **The OAuth signing key's role doesn't change.** It signs every token we issue, including across an IdP migration. The IdP swap doesn't touch it.
+- **PKCE on `/authorize` stays mandatory.** It's the security boundary for public clients (Claude). Removing it would be a regression even if the IdP is more trustworthy.
 
 ## 3. What an authenticated request looks like today
 
-This is the wire format you would need to reproduce, or to verify against, when writing a new provider.
+This is the wire format you need to reproduce, or to verify against, when writing a new IdP integration.
 
-When a request passes the Cloudflare Access policy, the request that arrives at the Cloud Run service has these headers in addition to whatever the client sent:
+A fully-authenticated `/mcp` request:
 
-- `Cf-Access-Jwt-Assertion: <JWT>` — an RS256-signed JWT.
-- `Cf-Access-Authenticated-User-Email: <email>` — set when the caller is a human (interactive SSO). Not set for service-token callers.
-- `Cf-Access-Client-Id: <id>` and `Cf-Access-Client-Secret: <secret>` may be present on the original request; Cloudflare strips and replaces these before forwarding.
+```
+POST /mcp HTTP/2
+Host: mcp.<your-domain>
+Authorization: Bearer <access_token>
+Content-Type: application/json
+Accept: application/json, text/event-stream
 
-The JWT's structure:
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{...}}
+```
+
+The `<access_token>` is a compact JWS (three base64url segments separated by dots) with this payload:
 
 | Field | Value |
 | --- | --- |
-| `alg` | `RS256` |
-| `iss` | `https://<team-name>.cloudflareaccess.com` |
-| `aud` | `<application AUD tag>` (an opaque hex string per Access application) |
-| `exp` | Unix epoch seconds, expiry. |
-| `iat` | Unix epoch seconds, issued-at. |
-| `email` | The authenticated user's email (interactive SSO only). |
-| `common_name` | The service token's name (machine-to-machine only). |
-| `country`, `iss`, `sub` | Other standard claims. |
+| `alg` (header) | `RS256` |
+| `kid` (header) | RFC 7638 thumbprint of our public key |
+| `iss` | `OAUTH_ISSUER` — `https://mcp.<domain>` |
+| `aud` | Same as `iss` |
+| `sub` | The authenticated user's email |
+| `exp` | Unix epoch seconds, 1 hour after issuance by default |
+| `iat` | Unix epoch seconds, issuance time |
+| `type` | `"access_token"` (our discriminator; rejecting refresh tokens here) |
 
-The signing keys are published as a JWKS at:
-
-```
-https://<team-name>.cloudflareaccess.com/cdn-cgi/access/certs
-```
-
-Verification rules the server applies (see [services/obsidian-mcp/src/auth/CloudflareAccessAuthProviderLayer/](../../services/obsidian-mcp/src/auth/CloudflareAccessAuthProviderLayer/)):
+The signing key is published as a JWKS at `https://mcp.<domain>/.well-known/jwks.json`. Validation rules the server applies (see [services/obsidian-mcp/src/oauth/decodeAccessToken/](../../services/obsidian-mcp/src/oauth/decodeAccessToken/)):
 
 - Algorithm must be `RS256`. Other algs are rejected.
-- `iss` must match the configured team domain.
-- `aud` must match the configured application AUD.
+- Signature verifies against the public JWK (same key, kid matches).
+- `iss` matches the configured `OAUTH_ISSUER`.
+- `aud` matches the issuer.
 - `exp` and `nbf` are honoured by the `jose` library.
-- The `email` claim (or `common_name` for service tokens) becomes the `Identity.email`. If neither is present, the request is rejected — the Access policy is misconfigured.
+- `type` claim must be `"access_token"`. A refresh token presented here is rejected.
 
-Bearer-token check, run in addition:
+The OAuth flow that produced this token:
 
-- `Authorization: Bearer <token>` must be present.
-- The token is compared in constant time against the value of the `obsidian-mcp-bearer-token` Secret Manager secret. The token is 48 alphanumeric characters, generated by Terraform.
-
-A request that fails either check is rejected with `401` (missing) or `403` (mismatch). Both checks run before any tool handler executes; the MCP transport never sees an unauthenticated request.
+1. Claude → `GET /authorize?response_type=code&client_id=…&redirect_uri=…&code_challenge=…&code_challenge_method=S256&state=…`
+2. Server validates the params, signs a `google_state` JWT carrying the resumption payload, redirects to `https://accounts.google.com/o/oauth2/v2/auth?…&state=<google_state_jwt>`.
+3. User signs in with Google. Google redirects to `https://mcp.<domain>/oauth/google/callback?code=…&state=…`.
+4. Server decodes the `google_state`, exchanges Google's `code` for an `id_token` at `https://oauth2.googleapis.com/token`, verifies the `id_token` against Google's JWKS (`https://www.googleapis.com/oauth2/v3/certs`), extracts `email`, checks it against `ALLOWED_EMAILS`.
+5. Server signs an `authorization_code` JWT carrying `{ email, code_challenge, redirect_uri, client_id }` and redirects to Claude's `redirect_uri` with `code=<jwt>&state=<original-state>`.
+6. Claude → `POST /token` with `grant_type=authorization_code&code=…&code_verifier=…&redirect_uri=…&client_id=…`.
+7. Server decodes the code, verifies PKCE (`SHA256(code_verifier) == code_challenge`), checks redirect_uri match, signs the access + refresh tokens.
 
 ## 4. Migration recipe
 
-The general shape of an auth provider migration:
+The general shape of an OIDC-provider migration:
 
-1. **Implement a new `AuthProvider`** at `services/obsidian-mcp/src/auth/<YourProviderAuthProviderLayer>/index.ts` (with co-located `index.test.ts` per the [styleguide](styleguide.md)). The pattern is:
-   - A `<YourProvider>Config` type co-located in the same file.
-   - A `<YourProvider>AuthProviderLayer(cfg)` that returns a `Layer.succeed(AuthProvider, impl)`.
-   - The implementation runs the bearer-token check first (call `verifyBearerToken` from [services/obsidian-mcp/src/auth/verifyBearerToken/](../../services/obsidian-mcp/src/auth/verifyBearerToken/)), then validates the upstream provider's assertion, then returns an `Identity { email, source: "<your-provider>" }`.
-   - Add the new layer to the module barrel at [services/obsidian-mcp/src/auth/index.ts](../../services/obsidian-mcp/src/auth/index.ts) with `export * from "./<YourProviderAuthProviderLayer>";`.
+1. **Build a new sub-module** at `services/obsidian-mcp/src/oauth/<yourProvider>Oidc/` with the same three exports as the existing `googleOidc/`:
+   - `buildAuthUrl(...)` — assemble the URL we redirect the user to.
+   - `exchangeAuthCode(...)` — POST the IdP's token endpoint with the code.
+   - `verifyIdToken(...)` — verify the IdP's id_token against its JWKS, return the email.
+2. **Update the handlers**. `handleAuthorize` and `handleGoogleCallback` (rename it to `handleOidcCallback` if you want; the handler is generic enough) wire the dependencies through. The handlers don't import from `googleOidc/` directly today — they take a deps argument — so the swap is in `main.ts` where the deps are constructed.
+3. **Update the Terraform** to replace `google_oauth_client_id` and `obsidian-mcp-google-oauth-client-secret` with whatever your IdP needs (often: client_id, client_secret, JWKS URL, issuer URL, sometimes a tenant ID).
+4. **Update env vars** in [terraform/obsidian-mcp.tf](../../terraform/obsidian-mcp.tf): drop `GOOGLE_OAUTH_*`, add the equivalents.
+5. **Update the redirect URI** registered with the new IdP. Same shape: `https://mcp.<domain>/oauth/<idp>/callback` (or rename to `/oauth/callback` if you want a generic path).
+6. **Update [setup.md](setup.md) §4** with the new IdP-setup steps.
 
-2. **Switch the layer wired into [main.ts](../../services/obsidian-mcp/src/main.ts)**. Replace the `CloudflareAccessAuthProviderLayer({…})` instantiation with the new one. The `AUTH_PROVIDER` env var becomes the new value and the conditional in main.ts dispatches to it.
-
-3. **Update the deployment infrastructure**. This is the part that varies the most by provider — see the sketches below for the most likely targets.
-
-4. **Update the client-connection docs ([claude-connection.md](claude-connection.md))** with the new auth flow. Each provider has a different client-side story (Cloudflare service tokens vs. Google service accounts vs. OIDC client credentials).
-
-5. **Rotate the bearer token** as part of the migration. Add a new Secret Manager version, restart the Cloud Run revision (which re-mounts the new value), then update Claude's connector with the new token. The bearer is provider-independent and stays — but rotating it is a good habit during any auth-layer change.
-
-The migration should be doable in a single PR. Ideally with no production downtime: deploy the new provider behind a different env var, switch DNS / load balancer over, then remove the old provider in a follow-up.
+The migration should be doable in a single PR. The OAuth server itself, the token shapes, the discovery documents, and the AuthProvider abstraction don't change — only the IdP-facing sub-module and a slice of config.
 
 ## 5. Concrete migration sketches
 
 These are starting points, not full implementations. Each one names the moving parts; consult the upstream provider's documentation for current API specifics before cutting code.
 
-### 5.1 GCP IAP (the most likely path)
+### 5.1 Self-hosted OIDC (Authentik or Keycloak)
 
-If you want to keep everything on GCP and drop the Cloudflare layer, IAP is the natural fit. Cost: about $18/month for the HTTPS Load Balancer that IAP requires (Cloud Run alone can't be IAP-protected without an LB).
-
-What changes in Terraform:
-
-- Add a global HTTPS Load Balancer pointing at the Cloud Run service via a serverless NEG.
-- Enable IAP on the LB backend service. Configure the OAuth consent screen for the project.
-- Add IAM bindings: `roles/iap.httpsResourceAccessor` for the email(s) you want to allow.
-- Remove the `cloudflare_record.mcp` DNS record (the second tunnel hostname).
-- Remove the `mcp` ingress rule from the cloudflared config (run [scripts/obsidian-mcp/add-tunnel-hostname.sh](../../scripts/obsidian-mcp/add-tunnel-hostname.sh) in reverse, or edit `/etc/cloudflared/config.yml` by hand).
-- Add a DNS A record pointing `mcp.<domain>` at the LB's anycast IP.
-
-What changes in the server:
-
-- New `IAPAuthProvider` validating the `X-Goog-Iap-Jwt-Assertion` header. JWKS lives at `https://www.gstatic.com/iap/verify/public_key`. The `aud` claim is the LB's signed-header audience (a `/projects/<num>/global/backendServices/<id>` string from IAP).
-- Drop the `CF_ACCESS_*` env vars from the Cloud Run service. Add `IAP_AUDIENCE`.
-- Set `AUTH_PROVIDER=iap`.
-
-What changes for clients:
-
-- The Cloudflare service token is replaced by a Google service account with `roles/iap.httpsResourceAccessor` on the IAP backend.
-- The client mints an OIDC token for the IAP audience using the service account, sends it as `Authorization: Bearer <id-token>`. (Yes, this collides with our bearer-token check — solve by accepting the bearer in a different header for IAP, e.g. `X-Mcp-Bearer-Token`, or by placing the bearer inside a custom header from the start. Either way, document the change in [claude-connection.md](claude-connection.md).)
-
-Trade-offs: tighter integration with GCP, no third-party dependency for auth. The HTTPS LB is the recurring cost. The cold-start latency profile changes — IAP adds about 100ms of overhead.
-
-### 5.2 Self-hosted OIDC (Authentik)
-
-If you want full provider portability with no third-party dependency, you can run Authentik on the same e2-micro (it's resource-light enough to coexist with CouchDB, marginally) or a second free-tier-eligible VM.
+If you want full provider portability with no third-party dependency, you can run Authentik (or Keycloak) on the same e2-micro (it's resource-tight but doable for personal use) or a second free-tier-eligible VM.
 
 What changes in infrastructure:
 
 - Add Authentik to the docker-compose stack on the VM, or stand up a second VM. Expose Authentik through a third Cloudflare Tunnel ingress (`auth.<domain>`).
-- Configure an OIDC application in Authentik for the MCP server. Capture the client ID, client secret, and JWKS URL.
+- Configure an OIDC application in Authentik for the MCP server. Capture the client ID, client secret, JWKS URL, issuer URL.
 
 What changes in the server:
 
-- New `OIDCAuthProvider` that validates JWTs against Authentik's JWKS endpoint. The token comes in as `Authorization: Bearer <id-token>`. Same shape as the IAP provider, just with Authentik's JWKS URL and audience.
-- Set `AUTH_PROVIDER=oidc` and add `OIDC_JWKS_URL`, `OIDC_ISSUER`, `OIDC_AUDIENCE` env vars.
-- The bearer-token check moves to a different header to avoid the collision.
+- New sub-module `src/oauth/authentikOidc/` with the three functions, pointed at Authentik's endpoints instead of Google's.
+- Drop `GOOGLE_OAUTH_*` env vars; add `AUTHENTIK_OIDC_CLIENT_ID`, `AUTHENTIK_OIDC_CLIENT_SECRET` (Secret Manager), `AUTHENTIK_OIDC_ISSUER`, `AUTHENTIK_OIDC_REDIRECT_URI`.
+- Update `oauth/handlers/handleAuthorize/` and `handleGoogleCallback/` to use the new sub-module's `buildAuthUrl` / `exchangeAuthCode` / `verifyIdToken`. Or, if you like, rename them to `handleOidcCallback` and parameterize on the sub-module.
 
-What changes for clients:
-
-- Each client (Claude on desktop, iPad, iPhone) needs an OIDC client credentials flow setup, or a one-time authorisation code flow that yields a refresh token.
+What changes for clients: nothing. The OAuth dance Claude does is identical — only the human-auth screen they see during `/authorize` changes.
 
 Trade-offs: full portability, no vendor lock-in. The operational burden is real — Authentik wants its own Postgres or SQLite, regular updates, certificate management. If you're already running other self-hosted services, this is comfortable. If not, it's the most expensive option in operator time.
 
-### 5.3 Hosted OIDC (WorkOS, Clerk, Auth0)
+### 5.2 Hosted OIDC (WorkOS, Clerk, Auth0, Microsoft Entra ID)
 
-Mechanically identical to the Authentik path — implement an `OIDCAuthProvider` and point it at the hosted provider's JWKS endpoint and audience. The differences are operational: someone else runs the IdP, you pay them per active user, you give up on using auth as a portability lever.
+Mechanically identical to the Authentik path — the only differences are the endpoint URLs and that someone else operates the IdP. The differences are operational: someone else runs the IdP, you pay them per active user (varies wildly), you give up on using auth as a portability lever.
 
-This path is mostly interesting if you already use the hosted provider for other services. For a personal infra project, the Authentik or Cloudflare Access paths are usually simpler.
+This path is mostly interesting if you already use the hosted provider for other services. For a personal infra project, the Google or self-hosted paths are usually simpler.
 
-## 6. About the bearer token
+### 5.3 Back to Cloudflare Access
 
-The bearer token is the one piece of the auth stack that doesn't change across migrations. Why it exists:
+If for some reason the original Cloudflare Access path becomes attractive again (free tier limits expand, you migrate other services back to CF, etc.), the integration looks like a Cloudflare-Access-as-OIDC-provider setup:
 
-- **Defence in depth.** If the upstream provider is misconfigured (Access policy too permissive, IAP backend pointed at the wrong service, OIDC audience mismatch silently accepted), the bearer check still gates access.
-- **Provider-independent.** The token has no relationship with the upstream identity system; it's just a shared secret between the MCP server and its clients. Rotating it doesn't require changes anywhere outside the server and the clients.
-- **Cheap.** A constant-time string comparison against a 48-character secret is essentially free. The cost of having it is rounding error.
+- Configure Cloudflare Access in IdP mode for an Access application (Access → Applications → SaaS application → OIDC).
+- Capture client ID, client secret, JWKS URL, issuer URL.
+- Build `src/oauth/cloudflareAccessOidc/`, point at CF's endpoints.
 
-What changes for the bearer in a migration: nothing about how it's validated server-side. The only consideration is which header carries it — by default, `Authorization: Bearer <token>`. If you migrate to a provider that also wants `Authorization: Bearer <id-token>`, move the MCP bearer to a custom header (e.g. `X-Mcp-Bearer-Token`) and update both the server's `bearer.ts` and the clients.
+The main difference from Authentik: CF Access does the human-auth itself (any combination of email OTP, SSO providers, etc., per its policy). The MCP server doesn't see a redirect to a separate IdP; CF Access handles that internally and returns an OIDC `id_token` to us.
 
-Rotation procedure (current, applies regardless of provider):
+## 6. About the OAuth signing key
 
-1. `gcloud secrets versions add obsidian-mcp-bearer-token --data-file=-` with the new value.
-2. Re-deploy the Cloud Run revision — the new value is mounted at process start, so an existing revision keeps using the old value until it rotates.
-3. Update the Claude connector with the new token.
-4. Once everything's swung, disable the old version: `gcloud secrets versions disable <previous-version> --secret=obsidian-mcp-bearer-token`.
+The OAuth signing key is the one piece of the auth stack that doesn't change across IdP migrations. Why it exists:
+
+- **Origin-of-trust for our tokens.** Every JWT we issue (auth code, access, refresh, Google round-trip state) is signed with this key. The MCP server's `decodeAccessToken` only trusts JWTs we signed.
+- **No external dependency.** The kid is published in our JWKS; there's no third-party JWKS we depend on for *our own* tokens (only for the Google `id_token` during /authorize).
+- **Rotation is the revocation story.** We don't keep a token-revocation list. Rotating the signing key invalidates everything immediately — the new kid doesn't match any issued token's header, signature verification fails, clients re-auth.
+
+Rotation procedure:
+
+1. `scripts/obsidian-mcp/generate-oauth-key.sh --project=<project>` — generates a fresh RSA-2048 PKCS#8 PEM and pushes it as a new Secret Manager version.
+2. Roll the Cloud Run revision so the new value is mounted at process start (an existing revision keeps using the old value until it rotates):
+   ```
+   gcloud run services update obsidian-mcp \
+     --project=<project> --region=<region> \
+     --update-env-vars=BUMP=$(date +%s)
+   ```
+3. Connected Claude clients re-authenticate transparently the next time they hit `/mcp` and get a 401.
+4. Once everything's swung, disable the old version: `gcloud secrets versions disable <previous-version> --secret=obsidian-mcp-oauth-signing-key --project=<project>`.
 
 ## 7. The client side
 
-Each provider has a different shape on the client. Here's the current state and what would change in each migration target.
+The client side is unchanged across IdP migrations. Claude on web, iPad, and iPhone all do the standard MCP OAuth dance:
 
-### Today — Cloudflare Access service token
+- Discover endpoints from `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`.
+- Register dynamically at `/register` (gets back a deterministic client_id).
+- Open `/authorize` in a browser, complete the IdP sign-in (currently Google), get redirected back with a code.
+- Exchange the code at `/token` for access + refresh tokens.
+- Send the access token in `Authorization: Bearer …` on every `/mcp` request.
+- Refresh transparently when access tokens expire.
 
-The client (Claude's connector) sends two headers on every MCP request:
-
-- `CF-Access-Client-Id: <id>` and `CF-Access-Client-Secret: <secret>` — the Cloudflare Access service token Cloudflare issued for the MCP application.
-- `Authorization: Bearer <bearer>` — the MCP bearer token from Secret Manager.
-
-Cloudflare validates the service token at the edge, mints a `Cf-Access-Jwt-Assertion` JWT, and forwards. The server's two checks (JWT + bearer) cover the rest.
-
-### IAP migration — Google service account ID token
-
-The client mints a Google-issued OIDC ID token for the IAP audience (using a service account's private key) and sends it. The server validates it via Google's JWKS. The bearer header probably moves to `X-Mcp-Bearer-Token`. Claude on iOS doesn't natively know how to mint Google ID tokens; you'd put a small token-issuing proxy in front of it (a script that holds the service account credentials and refreshes the ID token periodically). This is the main UX wart of the IAP path.
-
-### Self-hosted OIDC migration — refresh-token flow
-
-A one-time browser-based authorization-code flow yields a refresh token, stored on the client device. The client refreshes an ID token from it on demand and sends it as `Authorization: Bearer <id-token>`. Same caveat about the MCP bearer moving to a custom header.
-
-### Hosted OIDC migration — same as self-hosted
-
-Same shape; the JWKS URL just points at the hosted provider.
+The IdP swap is invisible to Claude; the user just sees a different sign-in screen during `/authorize`.
 
 ## 8. When to consider migrating
 
-This is the operational signal that says "now's a good time to walk through this document":
+Operational signals that say "now's a good time to walk through this document":
 
-- **Cloudflare Access free tier limits** — currently 50 users. If your team grows past that, you're either paying Cloudflare or migrating. Personal-infra users will rarely hit this.
-- **Wanting the Cloudflare account-level dependency to go away.** If the entire personal infra needs to be portable to a different setup (or to a friend's account), the auth layer is the part that's hardest to detach in place. Migrating to IAP keeps it on GCP. Migrating to self-hosted OIDC removes the third-party dependency entirely.
-- **Adding a second non-MCP service that wants the same auth.** Each new service is a per-service Access application today. Either add another Access app (cheap, scales to dozens) or unify under a single OIDC provider. The latter is the moment the IAP / OIDC paths look attractive.
+- **Google's OAuth consent screen workflow becomes painful.** Currently if your app is in "Testing" mode, you have to add every user as a test user; if you publish, Google may require app verification for sensitive scopes. We use only `openid email`, which is non-sensitive, so this should stay simple — but if Google tightens the rules, an alternative IdP is an escape hatch.
+- **You want zero third-party dependencies in the auth path.** Self-hosted OIDC removes Google. The operational cost is real.
+- **You're standardizing on a different IdP for other services.** Wiring the MCP server to the same provider keeps SSO consistent across your infra.
 
-If none of those apply, the current Cloudflare Access setup is doing its job and the abstraction is paying its rent purely as insurance. Leave it.
+If none of those apply, the current Google OIDC setup is doing its job and the abstraction is paying its rent purely as insurance. Leave it.

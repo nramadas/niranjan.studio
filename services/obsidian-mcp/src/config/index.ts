@@ -1,13 +1,13 @@
-// Barrel: re-exports the public surface of each child folder. The
-// module-level `types.ts` is namespaced under `types` so consumers
-// access it as `types.AuthProviderKind` (per the styleguide convention
-// for type/constant grouping at the module level).
+// Barrel: re-exports the public surface of each child folder. There used
+// to be a module-level `types.ts` for the AuthProvider discriminator, but
+// with a single OAuth provider in production there's nothing left to put
+// there.
 
 export * from "./allConfig";
-export * from "./authConfig";
-export * from "./cloudflareAccessConfig";
+export * from "./allowedEmailsConfig";
 export * from "./couchDbConfig";
+export * from "./googleOidcConfig";
 export * from "./liveSyncConfig";
+export * from "./oauthConfig";
 export * from "./searchConfig";
 export * from "./serverConfig";
-export * as types from "./types.ts";

@@ -22,10 +22,6 @@ variable "gcp_zone" {
   default     = "us-east1-b"
 
   validation {
-    # Zone must be a real zone in the configured region. us-east1 is the odd
-    # one out — it has no "-a" (the zones are b/c/d). lookup() with [] as the
-    # fallback so an unknown region just returns "no valid zones" here and
-    # the region-validation surfaces the actual cause.
     condition = contains(
       lookup({
         "us-east1"    = ["us-east1-b", "us-east1-c", "us-east1-d"]
@@ -58,7 +54,11 @@ variable "obsidian_admin_user" {
   default     = "obsidian"
 }
 
-# ─── Cloudflare ─────────────────────────────────────────────────────────────
+# ─── Cloudflare (vault tunnel only) ─────────────────────────────────────────
+#
+# Cloudflare is the DNS provider for the apex domain and is responsible for
+# the tunnel that exposes CouchDB at vault.<domain>. The MCP service does
+# NOT traverse Cloudflare — see cloudflare.tf for the DNS-only mcp record.
 
 variable "domain" {
   type        = string
@@ -97,14 +97,17 @@ variable "obsidian_mcp_couchdb_user" {
   default     = "obsidian-mcp"
 }
 
-variable "cloudflare_access_team_domain" {
+variable "google_oauth_client_id" {
   type        = string
-  description = "Cloudflare Access team domain, e.g. `your-team.cloudflareaccess.com`. The server fetches the JWKS at https://<team>/cdn-cgi/access/certs to verify the Cf-Access-Jwt-Assertion header."
-  default     = ""
+  description = "Google OAuth 2.0 Web application client_id. Created in GCP Console → APIs & Services → Credentials. The client_secret lives in Secret Manager (`obsidian-mcp-google-oauth-client-secret`)."
 }
 
-variable "cloudflare_access_aud" {
-  type        = string
-  description = "Cloudflare Access application AUD tag (the `aud` JWT claim). Find it in the Cloudflare Zero Trust dashboard → Access → Applications → your MCP app → Overview."
-  default     = ""
+variable "mcp_allowed_emails" {
+  type        = list(string)
+  description = "Email addresses permitted to authenticate to the MCP service via Google OIDC. Lowercased, no whitespace. The server checks this set after Google verifies the user's identity."
+
+  validation {
+    condition     = length(var.mcp_allowed_emails) > 0
+    error_message = "mcp_allowed_emails must list at least one email — leaving it empty would let any Google account in."
+  }
 }

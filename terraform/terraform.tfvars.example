@@ -9,7 +9,11 @@ gcp_project_id = "your-gcp-project-id"
 gcp_region = "us-east1"
 gcp_zone   = "us-east1-b"
 
-# ─── Cloudflare ─────────────────────────────────────────────────────────────
+# ─── Cloudflare (vault tunnel only) ─────────────────────────────────────────
+# Cloudflare is the DNS provider for the apex and is the tunnel for CouchDB
+# at vault.<domain>. The MCP service does NOT use Cloudflare — its DNS
+# record is DNS-only (proxied=false) and points at Google for Cloud Run
+# domain mapping.
 domain = "example.studio"
 
 # Final hostname becomes <vault_subdomain>.<domain>, e.g. vault.example.studio.
@@ -20,7 +24,7 @@ vault_subdomain = "vault"
 #   - Zone Resources: Include → Specific zone → <your domain>
 cloudflare_api_token = "REDACTED"
 
-# Leave empty on the FIRST `terraform apply` — the DNS record is skipped
+# Leave empty on the FIRST `terraform apply` — the vault DNS record is skipped
 # until this is set. After running setup-tunnel.sh on the VM, paste the
 # tunnel UUID here and re-apply.
 cloudflare_tunnel_id = ""
@@ -39,14 +43,16 @@ cloudflare_tunnel_id = ""
 # scripts/obsidian-mcp/create-couchdb-user.sh.
 # obsidian_mcp_couchdb_user = "obsidian-mcp"
 
-# Cloudflare Access team domain. Find it at
-# https://one.dash.cloudflare.com → Settings → Custom Pages → Team domain.
-# Looks like `your-team.cloudflareaccess.com` (no scheme, no path).
-cloudflare_access_team_domain = ""
+# Google OAuth 2.0 Web application client_id. Created in:
+#   GCP Console → APIs & Services → Credentials → + Create Credentials
+#   → OAuth client ID → Web application
+# Authorized redirect URI: https://mcp.<domain>/oauth/google/callback
+# Looks like 1234567890-abcdef.apps.googleusercontent.com.
+google_oauth_client_id = "REPLACE_ME.apps.googleusercontent.com"
 
-# Cloudflare Access application AUD tag for the MCP application. Cloudflare
-# generates this when you create the Access app in the Zero Trust dashboard
-# (Access → Applications → your app → Overview → "Application Audience (AUD) Tag").
-# Leave empty until you've created the Access application in step 5 of
-# docs/obsidian-mcp/setup.md, then re-apply.
-cloudflare_access_aud = ""
+# Email allow-list. Anyone whose Google account email matches one of these
+# (case-insensitive) can sign in to the MCP service. Leave it tight —
+# this is the only gate between Google's billion accounts and your vault.
+mcp_allowed_emails = [
+  "you@example.com",
+]

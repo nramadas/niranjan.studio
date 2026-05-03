@@ -30,7 +30,7 @@ const config = {
 const handler =
   (runtime: ServerRuntime) =>
   async (args: { path: string; body?: string; frontmatter?: Record<string, unknown> }) =>
-    runTool(runtime)(
+    runTool(runtime, "update_note")(
       Effect.gen(function* () {
         const vault = yield* Vault;
         return yield* vault.updateNote(args.path, args.body, args.frontmatter);

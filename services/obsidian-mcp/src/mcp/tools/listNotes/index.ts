@@ -24,7 +24,7 @@ const config = {
 const handler =
   (runtime: ServerRuntime) =>
   async (args: { folder_prefix?: string; limit?: number }) =>
-    runTool(runtime)(
+    runTool(runtime, "list_notes")(
       Effect.gen(function* () {
         const vault = yield* Vault;
         const limit = args.limit ?? 100;

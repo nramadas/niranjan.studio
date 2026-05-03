@@ -14,9 +14,12 @@ describe("allConfig", () => {
               ["COUCHDB_USER", "obsidian-mcp"],
               ["COUCHDB_PASSWORD", "couch-secret"],
               ["LIVESYNC_PASSPHRASE", "diceware"],
-              ["CF_ACCESS_TEAM_DOMAIN", "team.cloudflareaccess.com"],
-              ["CF_ACCESS_AUD", "aud-tag"],
-              ["MCP_BEARER_TOKEN", "bearer-secret"],
+              ["OAUTH_SIGNING_KEY", "-----BEGIN PRIVATE KEY-----\nFAKE\n-----END PRIVATE KEY-----\n"],
+              ["OAUTH_ISSUER", "https://mcp.example"],
+              ["GOOGLE_OAUTH_CLIENT_ID", "1234.apps.googleusercontent.com"],
+              ["GOOGLE_OAUTH_CLIENT_SECRET", "GOCSPX-secret"],
+              ["GOOGLE_OAUTH_REDIRECT_URI", "https://mcp.example/oauth/google/callback"],
+              ["ALLOWED_EMAILS", "user@example.com"],
             ]),
           ),
         ),
@@ -24,7 +27,10 @@ describe("allConfig", () => {
     );
     expect(out.couchDb.database).toBe("obsidian");
     expect(Redacted.value(out.liveSync.passphrase)).toBe("diceware");
-    expect(out.auth.provider).toBe("cloudflare-access");
+    expect(out.oauth.issuer).toBe("https://mcp.example");
+    expect(out.oauth.accessTokenTtlSeconds).toBe(3600);
+    expect(out.googleOidc.clientId).toBe("1234.apps.googleusercontent.com");
+    expect(out.allowedEmails.emails.has("user@example.com")).toBe(true);
     expect(out.server.port).toBe(8080);
     expect(out.search.rebuildDebounceMs).toBe(5000);
   });

@@ -49,6 +49,11 @@ export const subscribeChanges = (
         Schedule.upTo("60 seconds"),
       ),
     ),
+    // After retries are exhausted, the daemon fiber would die silently. Log
+    // it so the search index quietly stopping updating is at least visible.
+    Effect.tapError((err) =>
+      Effect.logError(`changes feed retries exhausted, daemon exiting: ${err.message}`),
+    ),
   );
 
   return Effect.forkDaemon(retried) as Effect.Effect<

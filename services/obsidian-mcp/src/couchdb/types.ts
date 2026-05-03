@@ -9,21 +9,44 @@ export interface NoteDoc {
   _rev?: string;
   _deleted?: boolean;
   type: "newnote" | "plain";
-  /** Vault-relative path. May be encrypted (starts with `%`) when E2EE is on. */
+  /**
+   * When path obfuscation is on, this is `"/\\:" + HKDF-encrypted JSON of
+   * `{ path, mtime, ctime, size, children }`. The doc-level `mtime`,
+   * `ctime`, `size`, and `children` are deliberately zeroed/empty in that
+   * case; the real values live inside the encrypted blob. When obfuscation
+   * is off, this is the plaintext vault path.
+   */
   path: string;
-  /** Chunk document IDs. Concatenated in order to reassemble the note body. */
+  /**
+   * Chunk document IDs in order. EMPTY when path obfuscation is on — the
+   * real list is inside the encrypted `path` blob. Always read via
+   * `decryptMeta` when obfuscation is on.
+   */
   children: string[];
   ctime: number;
   mtime: number;
   size: number;
+  /**
+   * Inline storage for small notes. When non-empty AND HKDF-encrypted,
+   * `eden["h:++encrypted-hkdf"].data` holds the HKDF ciphertext of
+   * `JSON.stringify(originalEden)`.
+   */
+  eden?: Record<string, { data: string; epoch?: number } | unknown>;
 }
 
 export interface ChunkDoc {
   _id: string;
   _rev?: string;
   type: "leaf";
-  /** Chunk content. May be encrypted. */
+  /** Chunk content. May be encrypted (`%=` HKDF or `%$` ephemeral). */
   data: string;
+  /**
+   * LiveSync's encrypted-marker flag. `true` means `data` is ciphertext;
+   * absent/false means `data` is plaintext. Decrypt logic respects this so
+   * a chunk with `%`-prefixed plaintext (rare but possible) isn't mistaken
+   * for ciphertext.
+   */
+  e_?: boolean;
 }
 
 export type AnyDoc = NoteDoc | ChunkDoc;

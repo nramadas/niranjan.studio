@@ -28,7 +28,7 @@ const config = {
 const handler =
   (runtime: ServerRuntime) =>
   async (args: { query: string; limit?: number }) =>
-    runTool(runtime)(
+    runTool(runtime, "search_notes")(
       Effect.gen(function* () {
         const idx = yield* SearchIndex;
         return yield* idx.query(args.query, args.limit ?? 10);

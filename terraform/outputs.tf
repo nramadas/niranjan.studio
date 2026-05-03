@@ -1,9 +1,9 @@
 # ─── Outputs ────────────────────────────────────────────────────────────────
 #
-# Nothing sensitive here. The CouchDB password is intentionally NOT exposed
-# as an output — fetch it with the `couchdb_password_fetch_command` instead,
-# which goes through Secret Manager and IAM rather than putting plaintext in
-# the state-output.
+# Nothing sensitive here. Passwords and signing keys are deliberately NOT
+# exposed as outputs — fetch them with the `*_fetch_command` outputs
+# instead, which go through Secret Manager and IAM rather than putting
+# plaintext in the state-output.
 
 output "ssh_command" {
   description = "Command to SSH into the Obsidian VM via gcloud (handles IAP / OS Login automatically)."
@@ -41,8 +41,6 @@ output "vm_service_account_email" {
 }
 
 # ─── Convenience outputs for shell scripting ────────────────────────────────
-# So you can pull these values in `gcloud compute scp/ssh` invocations
-# without having to remember which zone you picked.
 
 output "gcp_project_id" {
   description = "GCP project ID (mirrors the input variable, exposed for shell scripting)."
@@ -62,13 +60,18 @@ output "instance_name" {
 # ─── Obsidian MCP server (Phase 2) ──────────────────────────────────────────
 
 output "obsidian_mcp_service_url" {
-  description = "Cloud Run URL of the MCP service (the *.run.app one). Public-facing clients should use https://<mcp_subdomain>.<domain> instead, which goes through Cloudflare Access."
+  description = "Cloud Run *.run.app URL — the underlying service hostname. Public clients should use the obsidian_mcp_public_url instead, which goes through the Google-managed cert on mcp.<domain>."
   value       = google_cloud_run_v2_service.obsidian_mcp.uri
 }
 
 output "obsidian_mcp_public_url" {
-  description = "Public URL Claude connects to. Resolves only after the second tunnel hostname and the Cloudflare Access policy are configured."
+  description = "Public URL Claude connects to. Resolves once the Cloudflare DNS record is applied and the Cloud Run domain mapping cert finishes provisioning (~30 min after first apply)."
   value       = "https://${var.mcp_subdomain}.${var.domain}"
+}
+
+output "obsidian_mcp_oauth_metadata_url" {
+  description = "OAuth 2.0 authorization-server metadata URL. Useful for verifying discovery works once DNS + cert are live."
+  value       = "https://${var.mcp_subdomain}.${var.domain}/.well-known/oauth-authorization-server"
 }
 
 output "obsidian_mcp_artifact_repo" {
@@ -91,9 +94,14 @@ output "obsidian_mcp_couchdb_password_fetch_command" {
   value       = "gcloud secrets versions access latest --project=${var.gcp_project_id} --secret=${google_secret_manager_secret.obsidian_mcp_couchdb_password.secret_id}"
 }
 
-output "obsidian_mcp_bearer_token_fetch_command" {
-  description = "Locally fetch the bearer token clients send in the Authorization header. Rotate it by adding a new Secret Manager version and re-deploying the Cloud Run revision."
-  value       = "gcloud secrets versions access latest --project=${var.gcp_project_id} --secret=${google_secret_manager_secret.obsidian_mcp_bearer_token.secret_id}"
+output "obsidian_mcp_oauth_signing_key_set_command" {
+  description = "One-time command to populate the OAuth signing key. Run scripts/obsidian-mcp/generate-oauth-key.sh which wraps this; or pipe an RSA-2048 PKCS#8 PEM in directly."
+  value       = "scripts/obsidian-mcp/generate-oauth-key.sh --project ${var.gcp_project_id}"
+}
+
+output "obsidian_mcp_google_oauth_client_secret_set_command" {
+  description = "One-time command to populate the Google OAuth client secret. Get the value from GCP Console → APIs & Services → Credentials → your OAuth 2.0 Client ID."
+  value       = "printf '%s' '<paste google client secret here>' | gcloud secrets versions add ${google_secret_manager_secret.obsidian_mcp_google_oauth_client_secret.secret_id} --project=${var.gcp_project_id} --data-file=-"
 }
 
 output "obsidian_mcp_livesync_passphrase_set_command" {

@@ -14,9 +14,6 @@ data "cloudflare_zone" "main" {
 # CNAME to <tunnel-id>.cfargotunnel.com is how Cloudflare routes traffic into
 # the tunnel. `proxied = true` is required — otherwise the CNAME resolves to
 # Cloudflare's argo edge but the proxy isn't engaged.
-#
-# The `count` is what makes this skip on first apply: leave
-# cloudflare_tunnel_id empty until the tunnel exists, then re-apply.
 
 resource "cloudflare_record" "vault" {
   count = var.cloudflare_tunnel_id == "" ? 0 : 1
@@ -32,23 +29,22 @@ resource "cloudflare_record" "vault" {
 
 # ─── MCP server hostname ────────────────────────────────────────────────────
 #
-# Phase 2 reuses the Phase 1 tunnel — the MCP server is a SECOND ingress rule
-# inside /etc/cloudflared/config.yml on the VM, pointing at the Cloud Run
-# URL instead of localhost:5984. The DNS record is just another CNAME into
-# the same .cfargotunnel.com host. Adding the ingress rule on the VM is
-# scripted: scripts/obsidian-mcp/add-tunnel-hostname.sh.
+# mcp.<domain> points directly at Google-hosted (ghs.googlehosted.com) so
+# Cloud Run domain mapping can serve the cert. `proxied = false` — DNS-only,
+# no Cloudflare in the request path. Cloudflare is still the DNS provider
+# (so we keep one place to manage the zone) but the actual MCP traffic
+# never traverses Cloudflare's edge.
 #
-# Skipped on the first apply (same gating as `vault`) because there's nothing
-# for the CNAME to land on until the tunnel exists.
+# Why ghs.googlehosted.com: that's the canonical CNAME target Cloud Run
+# domain mapping returns for a non-apex domain. (Apex domains require A/AAAA
+# records pointing at Google's anycast IPs instead — we don't need that here.)
 
 resource "cloudflare_record" "mcp" {
-  count = var.cloudflare_tunnel_id == "" ? 0 : 1
-
   zone_id = data.cloudflare_zone.main.id
   name    = var.mcp_subdomain
-  content = "${var.cloudflare_tunnel_id}.cfargotunnel.com"
+  content = "ghs.googlehosted.com"
   type    = "CNAME"
-  proxied = true
-  ttl     = 1
-  comment = "Cloudflare Tunnel target for the Obsidian MCP Cloud Run service"
+  proxied = false
+  ttl     = 300
+  comment = "Cloud Run domain mapping target for the Obsidian MCP service"
 }

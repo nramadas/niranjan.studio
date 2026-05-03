@@ -1,8 +1,9 @@
 import { Config } from "effect";
-import { authConfig } from "../authConfig";
-import { cloudflareAccessConfig } from "../cloudflareAccessConfig";
+import { allowedEmailsConfig } from "../allowedEmailsConfig";
 import { couchDbConfig } from "../couchDbConfig";
+import { googleOidcConfig } from "../googleOidcConfig";
 import { liveSyncConfig } from "../liveSyncConfig";
+import { oauthConfig } from "../oauthConfig";
 import { searchConfig } from "../searchConfig";
 import { serverConfig } from "../serverConfig";
 
@@ -15,8 +16,9 @@ import { serverConfig } from "../serverConfig";
 export const allConfig = Config.all({
   couchDb: couchDbConfig,
   liveSync: liveSyncConfig,
-  cloudflareAccess: cloudflareAccessConfig,
-  auth: authConfig,
+  oauth: oauthConfig,
+  googleOidc: googleOidcConfig,
+  allowedEmails: allowedEmailsConfig,
   server: serverConfig,
   search: searchConfig,
 });

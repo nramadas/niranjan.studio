@@ -33,7 +33,10 @@ export interface VaultImpl {
     path: string,
     body: string,
     frontmatter: Record<string, unknown> | undefined,
-  ) => Effect.Effect<NoteRead, CouchDbError | EncryptionError | NoteConflictError>;
+  ) => Effect.Effect<
+    NoteRead,
+    CouchDbError | DecryptionError | EncryptionError | NoteConflictError
+  >;
   readonly updateNote: (
     path: string,
     body: string | undefined,

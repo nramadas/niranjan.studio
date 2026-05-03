@@ -5,7 +5,7 @@ Terraform and supporting scripts for personal cloud infrastructure on GCP. The r
 ## Current projects
 
 - **Obsidian sync** (Phase 1): self-hosted CouchDB on a GCE `e2-micro` VM, exposed via Cloudflare Tunnel, syncing to Obsidian on Mac, iPad, and iPhone via the Self-hosted LiveSync plugin. See [docs/obsidian/setup.md](docs/obsidian/setup.md).
-- **Obsidian MCP server** (Phase 2): a Cloud Run service that exposes the same vault to Claude over the Model Context Protocol. Reads and writes encrypted notes through the LiveSync E2EE format, fronted by the same Cloudflare Tunnel under a second hostname, gated by Cloudflare Access plus a server-side bearer token. See [docs/obsidian-mcp/setup.md](docs/obsidian-mcp/setup.md).
+- **Obsidian MCP server** (Phase 2): a Cloud Run service that exposes the same vault to Claude over the Model Context Protocol. Reads and writes encrypted notes through the LiveSync E2EE format. Reached at `mcp.<domain>` via Cloud Run's native domain mapping (no Cloudflare in this path); gated by an OAuth 2.1 server inside the service that uses Google as the OIDC identity provider. See [docs/obsidian-mcp/setup.md](docs/obsidian-mcp/setup.md).
 
 ## Read this before you spend money
 
@@ -48,8 +48,8 @@ personal-infra/
 │   ├── variables.tf                  Input variables.
 │   ├── outputs.tf                    SSH command, IP, secret-fetch command.
 │   ├── obsidian.tf                   VM, service account, password secret.
-│   ├── obsidian-mcp.tf               Cloud Run MCP service, secrets, IAM, image repo.
-│   ├── cloudflare.tf                 DNS records for vault.<domain> and mcp.<domain>.
+│   ├── obsidian-mcp.tf               Cloud Run MCP service, secrets, IAM, image repo, domain mapping.
+│   ├── cloudflare.tf                 DNS records for vault.<domain> (proxied tunnel) and mcp.<domain> (DNS-only to Cloud Run).
 │   └── terraform.tfvars.example      Template (real .tfvars is gitignored).
 ├── services/
 │   └── obsidian-mcp/                 TypeScript Cloud Run service (Effect.ts + MCP SDK).
@@ -60,7 +60,8 @@ personal-infra/
 │   │   └── setup-tunnel.sh           Run-once on the VM: cloudflared setup.
 │   ├── obsidian-mcp/
 │   │   ├── create-couchdb-user.sh    Provisions the scoped MCP CouchDB user.
-│   │   ├── add-tunnel-hostname.sh    Adds the second tunnel ingress to the VM.
+│   │   ├── generate-oauth-key.sh     Generates RSA-2048 PKCS#8 and uploads to Secret Manager.
+│   │   ├── remove-tunnel-hostname.sh One-time: removes the legacy mcp ingress rule from the VM.
 │   │   ├── deploy.sh                 Builds, pushes, and rolls a new Cloud Run revision.
 │   │   └── test-local.sh             Runs the server locally against the prod CouchDB.
 │   └── lib/
@@ -75,10 +76,11 @@ personal-infra/
     └── obsidian-mcp/
         ├── setup.md                  Phase 2 walkthrough end to end.
         ├── architecture.md           Request flow, trust boundaries.
-        ├── auth.md                   Auth design and migration recipe.
-        ├── access-setup.md           Cloudflare Access policy walkthrough.
+        ├── auth.md                   Auth design and IdP migration recipe.
+        ├── oauth.md                  OAuth implementation reference.
         ├── tools.md                  MCP tool reference.
         ├── claude-connection.md      How to add the connector in Claude.
+        ├── styleguide.md             Code style for services/obsidian-mcp.
         └── troubleshooting.md        Common Phase 2 failure modes.
 ```
 
