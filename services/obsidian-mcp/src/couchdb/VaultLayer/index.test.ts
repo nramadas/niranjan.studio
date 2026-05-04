@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { Effect, Layer, Redacted } from "effect";
-import { encrypt as encryptHkdf } from "octagonal-wheels/encryption/hkdf.js";
+import {
+  decrypt as decryptHkdf,
+  encrypt as encryptHkdf,
+} from "octagonal-wheels/encryption/hkdf.js";
 import { VaultLayer } from "./index.ts";
 import { CouchClient, type CouchClientImpl } from "../CouchClient";
 import { Vault } from "../Vault";
@@ -114,5 +117,58 @@ describe("VaultLayer", () => {
     if (exit._tag === "Failure") {
       expect(JSON.stringify(exit.cause)).toContain("NoteNotFoundError");
     }
+  });
+
+  it("createNote stores UTF-8 byte length (not UTF-16 char length) in the meta blob size", async () => {
+    // Content with em-dashes and a curly apostrophe — each em-dash is 1
+    // UTF-16 unit but 3 UTF-8 bytes, the apostrophe is 1 unit but 3 bytes.
+    // The plugin computes size as bytes; if we used `raw.length` (UTF-16
+    // units) the plugin's integrity check would fail with "File … seems
+    // to be corrupted! Writing prevented. (charLen != byteLen)" and the
+    // file would never appear in the local vault.
+    const body = "Two em-dashes — and — a curly apostrophe’s test.";
+    const charLength = body.length;
+    const byteLength = Buffer.byteLength(body, "utf8");
+    expect(charLength).not.toBe(byteLength); // sanity: input actually has multi-byte chars
+
+    const writtenNotes: NoteDoc[] = [];
+    const writtenChunks: ChunkDoc[] = [];
+    const client = buildStubClient([], []);
+    (client.putDoc as unknown as ReturnType<typeof vi.fn>) = vi.fn(
+      (doc: { _id: string; type?: string }) => {
+        if (doc.type === "plain" || doc.type === "newnote") writtenNotes.push(doc as NoteDoc);
+        return Effect.succeed({ ...doc, _rev: "1-stub" } as never);
+      },
+    ) as never;
+    (client.bulkPut as unknown as ReturnType<typeof vi.fn>) = vi.fn(
+      (docs: ReadonlyArray<ChunkDoc>) => {
+        writtenChunks.push(...docs);
+        return Effect.succeed(docs.map((d) => ({ id: d._id, rev: "1-stub", ok: true })));
+      },
+    ) as never;
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const v = yield* Vault;
+        return yield* v.createNote("multibyte.md", body, undefined);
+      }).pipe(
+        Effect.provide(VaultLayer(redacted).pipe(Layer.provide(Layer.succeed(CouchClient, client)))),
+      ),
+    );
+
+    // The response shape carries the byte size — what callers (and read_note) see.
+    expect(result.size).toBe(byteLength);
+
+    // The encrypted meta blob is what the plugin reads. Its `size` field
+    // is the value the plugin's integrity check compares against.
+    expect(writtenNotes).toHaveLength(1);
+    const noteDoc = writtenNotes[0]!;
+    expect(noteDoc.path.startsWith(ENCRYPTED_META_PREFIX)).toBe(true);
+    const ciphertext = noteDoc.path.slice(ENCRYPTED_META_PREFIX.length);
+    const metaJson = await decryptHkdf(ciphertext, passphrase, fixedSalt);
+    const meta = JSON.parse(metaJson) as { size: number; path: string };
+    expect(meta.size).toBe(byteLength);
+    expect(meta.size).not.toBe(charLength);
+    expect(meta.path).toBe("multibyte.md");
   });
 });

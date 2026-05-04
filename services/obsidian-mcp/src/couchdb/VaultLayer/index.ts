@@ -294,6 +294,12 @@ const buildImpl = (
 
       const now = Date.now();
       const ctime = existing?.ctime ?? now;
+      // The plugin compares this against the UTF-8 byte length of the
+      // reassembled chunk content on read; if they don't match it logs
+      // "File X seems to be corrupted! Writing prevented." and refuses
+      // to write the file locally. `raw.length` counts UTF-16 code
+      // units, which only matches byte length for pure ASCII.
+      const sizeBytes = Buffer.byteLength(raw, "utf8");
       const noteDoc: NoteDoc = obfuscateOn
         ? // Obfuscated-properties path: the JSON metadata blob (path,
           // times, size, children) goes inside the encrypted `path`
@@ -315,7 +321,7 @@ const buildImpl = (
                 path,
                 mtime: now,
                 ctime,
-                size: raw.length,
+                size: sizeBytes,
                 children: chunkIds,
               },
               passphrase,
@@ -336,7 +342,7 @@ const buildImpl = (
             children: chunkIds,
             ctime,
             mtime: now,
-            size: raw.length,
+            size: sizeBytes,
           } satisfies NoteDoc);
 
       if (existing?._rev) {
@@ -371,7 +377,7 @@ const buildImpl = (
         body: parsed.body,
         ctime,
         mtime: now,
-        size: raw.length,
+        size: sizeBytes,
       } satisfies NoteRead;
     });
 
