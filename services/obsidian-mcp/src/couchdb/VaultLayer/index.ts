@@ -5,6 +5,7 @@ import { DecryptionError } from "../../lib/errors/DecryptionError";
 import { EncryptionError } from "../../lib/errors/EncryptionError";
 import { NoteConflictError } from "../../lib/errors/NoteConflictError";
 import { NoteNotFoundError } from "../../lib/errors/NoteNotFoundError";
+import { StringMatchError } from "../../lib/errors/StringMatchError";
 import { CouchClient, type CouchClientImpl } from "../CouchClient";
 import { Vault, type VaultImpl } from "../Vault";
 import { assembleChunks } from "../assembleChunks";
@@ -26,6 +27,56 @@ const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---\n?/;
 // out of the full YAML-spec rabbit hole; the LiveSync vault is
 // user-controlled, but the MCP tools expose frontmatter as an opaque
 // record back to the client anyway.
+// Render a single YAML scalar. We don't pull in a full YAML library;
+// this covers the common cases (identifiers, simple strings, numbers,
+// bools, null) and falls back to JSON-style double-quoting for strings
+// that would otherwise be ambiguous in YAML (contain a colon, brackets,
+// leading/trailing whitespace, or other reserved sigils).
+const formatYamlScalar = (v: unknown): string => {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "boolean" || typeof v === "number") return String(v);
+  const s = String(v);
+  if (s === "") return '""';
+  if (/^\s|\s$|[:,\[\]{}#&*!|>'"%@`]/.test(s)) return JSON.stringify(s);
+  return s;
+};
+
+// Inverse of formatYamlScalar — recognises the scalar forms we emit
+// and the common shapes users hand-write in Obsidian frontmatter.
+// Booleans, integers, floats, null and quoted strings get typed
+// values; anything else falls through as a bare string.
+const parseYamlScalar = (raw: string): unknown => {
+  const t = raw.trim();
+  if (t === "" || t === "~" || t === "null") return null;
+  if (t === "true") return true;
+  if (t === "false") return false;
+  if (/^-?\d+$/.test(t)) return Number(t);
+  if (/^-?\d+\.\d+$/.test(t)) return Number(t);
+  if (
+    (t.startsWith('"') && t.endsWith('"')) ||
+    (t.startsWith("'") && t.endsWith("'"))
+  ) {
+    try {
+      if (t.startsWith('"')) return JSON.parse(t);
+    } catch {
+      /* fall through to slice */
+    }
+    return t.slice(1, -1);
+  }
+  return t;
+};
+
+const parseYamlInlineSequence = (raw: string): unknown[] | undefined => {
+  if (!raw.startsWith("[") || !raw.endsWith("]")) return undefined;
+  const inner = raw.slice(1, -1).trim();
+  if (inner === "") return [];
+  // Naive comma-split — doesn't handle nested arrays or commas inside
+  // quoted strings. Good enough for `tags: [a, b, c]`, the common
+  // Obsidian shape. Stricter shapes are uncommon in frontmatter and
+  // would round-trip through `read_note` as raw strings.
+  return inner.split(",").map((s) => parseYamlScalar(s));
+};
+
 const parseFrontmatter = (raw: string): { frontmatter: Record<string, unknown>; body: string } => {
   const match = FRONTMATTER_RE.exec(raw);
   if (!match) return { frontmatter: {}, body: raw };
@@ -33,7 +84,15 @@ const parseFrontmatter = (raw: string): { frontmatter: Record<string, unknown>; 
   const fm: Record<string, unknown> = {};
   for (const line of yaml.split("\n")) {
     const m = /^([A-Za-z0-9_\-]+)\s*:\s*(.*)$/.exec(line.trim());
-    if (m && m[1] !== undefined) fm[m[1]] = m[2] ?? "";
+    if (m && m[1] !== undefined) {
+      const value = m[2] ?? "";
+      // Recognise inline flow sequences (`[a, b, c]`) and typed
+      // scalars (booleans, numbers, null, quoted strings) on read so
+      // round-tripping `create_note → read_note` gives the caller back
+      // structured values — not strings they'd have to re-parse.
+      const asArray = parseYamlInlineSequence(value);
+      fm[m[1]] = asArray ?? parseYamlScalar(value);
+    }
   }
   return { frontmatter: fm, body: raw.slice(match[0].length) };
 };
@@ -41,7 +100,17 @@ const parseFrontmatter = (raw: string): { frontmatter: Record<string, unknown>; 
 const formatFrontmatter = (fm: Record<string, unknown>, body: string): string => {
   const keys = Object.keys(fm);
   if (keys.length === 0) return body;
-  const lines = keys.map((k) => `${k}: ${String(fm[k] ?? "")}`).join("\n");
+  const lines = keys.map((k) => {
+    const v = fm[k];
+    if (Array.isArray(v)) {
+      // YAML inline flow sequence — `tags: [a, b]` is what the Obsidian
+      // frontmatter parser expects for list-valued keys. We always emit
+      // inline (not block-style) so each frontmatter entry stays on a
+      // single line, matching what `parseFrontmatter` reads back.
+      return `${k}: [${v.map(formatYamlScalar).join(", ")}]`;
+    }
+    return `${k}: ${formatYamlScalar(v)}`;
+  }).join("\n");
   return `---\n${lines}\n---\n${body}`;
 };
 
@@ -481,6 +550,35 @@ const buildImpl = (
           ? current.body + content
           : `${current.body}\n${content}`;
         const raw = formatFrontmatter(current.frontmatter, body);
+        return yield* writeWithRetry(path, raw);
+      }),
+
+    editNote: (path, oldString, newString, replaceAll) =>
+      Effect.gen(function* () {
+        const doc = yield* findNoteDocByPath(path);
+        if (!doc) return yield* Effect.fail(new NoteNotFoundError({ path }));
+        const current = yield* fetchNoteByDoc(doc);
+        // Count occurrences in the body — frontmatter is structured and
+        // edited via `update_note`, so find/replace deliberately
+        // ignores it. Using `split(old).length - 1` rather than a regex
+        // to avoid surprises with special regex characters in user
+        // content (e.g. literal `.*` or `[brackets]`).
+        const occurrences =
+          oldString === "" ? 0 : current.body.split(oldString).length - 1;
+        if (occurrences === 0) {
+          return yield* Effect.fail(
+            new StringMatchError({ path, reason: "not_found", occurrences: 0 }),
+          );
+        }
+        if (occurrences > 1 && !replaceAll) {
+          return yield* Effect.fail(
+            new StringMatchError({ path, reason: "ambiguous", occurrences }),
+          );
+        }
+        const newBody = replaceAll
+          ? current.body.split(oldString).join(newString)
+          : current.body.replace(oldString, newString);
+        const raw = formatFrontmatter(current.frontmatter, newBody);
         return yield* writeWithRetry(path, raw);
       }),
 

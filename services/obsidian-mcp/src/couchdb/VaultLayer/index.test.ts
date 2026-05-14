@@ -119,6 +119,50 @@ describe("VaultLayer", () => {
     }
   });
 
+  it("createNote renders array-valued frontmatter as YAML inline sequence and read parses it back as an array", async () => {
+    // Capture the chunks the layer encrypts on write, so we can decrypt
+    // them and inspect the YAML it emitted.
+    const writtenChunks: ChunkDoc[] = [];
+    const client = buildStubClient([], []);
+    (client.bulkPut as unknown as ReturnType<typeof vi.fn>) = vi.fn(
+      (docs: ReadonlyArray<ChunkDoc>) => {
+        writtenChunks.push(...docs);
+        return Effect.succeed(docs.map((d) => ({ id: d._id, rev: "1-stub", ok: true })));
+      },
+    ) as never;
+
+    const createResult = await Effect.runPromise(
+      Effect.gen(function* () {
+        const v = yield* Vault;
+        return yield* v.createNote("tagged.md", "Body text", {
+          tags: ["draft", "idea", "weekly"],
+          status: "in-progress",
+          published: false,
+        });
+      }).pipe(
+        Effect.provide(VaultLayer(redacted).pipe(Layer.provide(Layer.succeed(CouchClient, client)))),
+      ),
+    );
+
+    // The response parses back into structured form (array stays an array,
+    // boolean stays a boolean) so callers don't have to re-parse a string.
+    expect(createResult.frontmatter).toEqual({
+      tags: ["draft", "idea", "weekly"],
+      status: "in-progress",
+      published: false,
+    });
+
+    // Verify the YAML we actually serialized: decrypt the first chunk and
+    // peek at the rendered frontmatter block. The `tags: [...]` form is
+    // what Obsidian's frontmatter parser treats as a list (vs the broken
+    // `tags: draft,idea,weekly` we used to emit).
+    expect(writtenChunks).toHaveLength(1);
+    const chunkData = await decryptHkdf(writtenChunks[0]!.data, passphrase, fixedSalt);
+    expect(chunkData).toContain("tags: [draft, idea, weekly]");
+    expect(chunkData).toContain("status: in-progress");
+    expect(chunkData).toContain("published: false");
+  });
+
   it("createNote stores UTF-8 byte length (not UTF-16 char length) in the meta blob size", async () => {
     // Content with em-dashes and a curly apostrophe — each em-dash is 1
     // UTF-16 unit but 3 UTF-8 bytes, the apostrophe is 1 unit but 3 bytes.
@@ -170,5 +214,146 @@ describe("VaultLayer", () => {
     expect(meta.size).toBe(byteLength);
     expect(meta.size).not.toBe(charLength);
     expect(meta.path).toBe("multibyte.md");
+  });
+
+  it("editNote applies a find/replace and only the changed region is rewritten in the response body", async () => {
+    const noteId = await Effect.runPromise(path2id("edit-target.md", passphrase));
+    const originalBody = "alpha beta gamma";
+    const chunk = await encryptHkdf(originalBody, passphrase, fixedSalt);
+    const metaJson = JSON.stringify({
+      path: "edit-target.md",
+      mtime: 100,
+      ctime: 50,
+      size: Buffer.byteLength(originalBody, "utf8"),
+      children: ["h:+orig"],
+    });
+    const encryptedMeta = await encryptHkdf(metaJson, passphrase, fixedSalt);
+    const note: NoteDoc = {
+      _id: noteId,
+      _rev: "1-x",
+      type: "plain",
+      path: `${ENCRYPTED_META_PREFIX}${encryptedMeta}`,
+      children: [],
+      ctime: 0,
+      mtime: 0,
+      size: 0,
+      eden: {},
+    };
+    const client = buildStubClient(
+      [note],
+      [{ _id: "h:+orig", type: "leaf", data: chunk, e_: true }],
+    );
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const v = yield* Vault;
+        return yield* v.editNote("edit-target.md", "beta", "BETA", false);
+      }).pipe(
+        Effect.provide(VaultLayer(redacted).pipe(Layer.provide(Layer.succeed(CouchClient, client)))),
+      ),
+    );
+    expect(result.body).toBe("alpha BETA gamma");
+    // ctime preserved across the edit (was 50 in the original meta).
+    expect(result.ctime).toBe(50);
+  });
+
+  it("editNote fails with StringMatchError when the search string isn't present", async () => {
+    const noteId = await Effect.runPromise(path2id("nothing-matches.md", passphrase));
+    const chunk = await encryptHkdf("just some body", passphrase, fixedSalt);
+    const metaJson = JSON.stringify({
+      path: "nothing-matches.md",
+      mtime: 1,
+      ctime: 1,
+      size: 14,
+      children: ["h:+x"],
+    });
+    const encryptedMeta = await encryptHkdf(metaJson, passphrase, fixedSalt);
+    const note: NoteDoc = {
+      _id: noteId,
+      _rev: "1-x",
+      type: "plain",
+      path: `${ENCRYPTED_META_PREFIX}${encryptedMeta}`,
+      children: [],
+      ctime: 0,
+      mtime: 0,
+      size: 0,
+      eden: {},
+    };
+    const client = buildStubClient(
+      [note],
+      [{ _id: "h:+x", type: "leaf", data: chunk, e_: true }],
+    );
+
+    const exit = await Effect.runPromiseExit(
+      Effect.gen(function* () {
+        const v = yield* Vault;
+        return yield* v.editNote("nothing-matches.md", "absent", "new", false);
+      }).pipe(
+        Effect.provide(VaultLayer(redacted).pipe(Layer.provide(Layer.succeed(CouchClient, client)))),
+      ),
+    );
+    expect(exit._tag).toBe("Failure");
+    if (exit._tag === "Failure") {
+      const serialised = JSON.stringify(exit.cause);
+      expect(serialised).toContain("StringMatchError");
+      expect(serialised).toContain("not_found");
+    }
+  });
+
+  it("editNote fails ambiguous when old_string occurs multiple times and replace_all is false", async () => {
+    const noteId = await Effect.runPromise(path2id("ambig.md", passphrase));
+    const body = "foo bar foo bar foo";
+    const chunk = await encryptHkdf(body, passphrase, fixedSalt);
+    const metaJson = JSON.stringify({
+      path: "ambig.md",
+      mtime: 1,
+      ctime: 1,
+      size: Buffer.byteLength(body, "utf8"),
+      children: ["h:+y"],
+    });
+    const encryptedMeta = await encryptHkdf(metaJson, passphrase, fixedSalt);
+    const note: NoteDoc = {
+      _id: noteId,
+      _rev: "1-x",
+      type: "plain",
+      path: `${ENCRYPTED_META_PREFIX}${encryptedMeta}`,
+      children: [],
+      ctime: 0,
+      mtime: 0,
+      size: 0,
+      eden: {},
+    };
+    const client = buildStubClient(
+      [note],
+      [{ _id: "h:+y", type: "leaf", data: chunk, e_: true }],
+    );
+
+    // replace_all=false → ambiguous error
+    const ambig = await Effect.runPromiseExit(
+      Effect.gen(function* () {
+        const v = yield* Vault;
+        return yield* v.editNote("ambig.md", "foo", "FOO", false);
+      }).pipe(
+        Effect.provide(VaultLayer(redacted).pipe(Layer.provide(Layer.succeed(CouchClient, client)))),
+      ),
+    );
+    expect(ambig._tag).toBe("Failure");
+    if (ambig._tag === "Failure") {
+      const serialised = JSON.stringify(ambig.cause);
+      expect(serialised).toContain("StringMatchError");
+      expect(serialised).toContain("ambiguous");
+      expect(serialised).toContain("\"occurrences\":3");
+    }
+
+    // replace_all=true → succeeds and rewrites every occurrence
+    const all = await Effect.runPromise(
+      Effect.gen(function* () {
+        const v = yield* Vault;
+        return yield* v.editNote("ambig.md", "foo", "FOO", true);
+      }).pipe(
+        Effect.provide(VaultLayer(redacted).pipe(Layer.provide(Layer.succeed(CouchClient, client)))),
+      ),
+    );
+    expect(all.body).toBe("FOO bar FOO bar FOO");
   });
 });

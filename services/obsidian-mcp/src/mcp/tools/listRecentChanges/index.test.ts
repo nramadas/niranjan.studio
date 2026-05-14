@@ -14,6 +14,7 @@ describe("listRecentChanges tool", () => {
       createNote: () => Effect.succeed({} as never),
       updateNote: () => Effect.succeed({} as never),
       appendToNote: () => Effect.succeed({} as never),
+      editNote: () => Effect.succeed({} as never),
       deleteNote: () => Effect.void,
     };
     const runtime = ManagedRuntime.make(Layer.succeed(Vault, stub));
@@ -32,6 +33,7 @@ describe("listRecentChanges tool", () => {
       createNote: () => Effect.succeed({} as never),
       updateNote: () => Effect.succeed({} as never),
       appendToNote: () => Effect.succeed({} as never),
+      editNote: () => Effect.succeed({} as never),
       deleteNote: () => Effect.void,
     };
     const runtime = ManagedRuntime.make(Layer.succeed(Vault, stub));

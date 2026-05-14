@@ -4,6 +4,7 @@ import type { DecryptionError } from "../../lib/errors/DecryptionError";
 import type { EncryptionError } from "../../lib/errors/EncryptionError";
 import type { NoteConflictError } from "../../lib/errors/NoteConflictError";
 import type { NoteNotFoundError } from "../../lib/errors/NoteNotFoundError";
+import type { StringMatchError } from "../../lib/errors/StringMatchError";
 import type { NoteRead, NoteSummary } from "../types.ts";
 
 /**
@@ -51,6 +52,20 @@ export interface VaultImpl {
   ) => Effect.Effect<
     NoteRead,
     CouchDbError | DecryptionError | NoteNotFoundError | EncryptionError | NoteConflictError
+  >;
+  readonly editNote: (
+    path: string,
+    oldString: string,
+    newString: string,
+    replaceAll: boolean,
+  ) => Effect.Effect<
+    NoteRead,
+    | CouchDbError
+    | DecryptionError
+    | NoteNotFoundError
+    | EncryptionError
+    | NoteConflictError
+    | StringMatchError
   >;
   readonly deleteNote: (
     path: string,

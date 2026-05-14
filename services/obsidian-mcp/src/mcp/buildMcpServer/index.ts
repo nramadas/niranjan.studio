@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { appendToNote } from "../tools/appendToNote";
 import { createNote } from "../tools/createNote";
 import { deleteNote } from "../tools/deleteNote";
+import { editNote } from "../tools/editNote";
 import { listNotes } from "../tools/listNotes";
 import { listRecentChanges } from "../tools/listRecentChanges";
 import { readNote } from "../tools/readNote";
@@ -25,13 +26,13 @@ export const buildMcpServer = (runtime: ServerRuntime): McpServer => {
     {
       capabilities: { tools: {} },
       instructions:
-        "Read, search, and edit the user's Obsidian vault. Notes are stored as markdown with optional YAML frontmatter. Prefer search_notes over list_notes when looking for content; prefer update_note over delete_note + create_note for in-place edits.",
+        "Read, search, and edit the user's Obsidian vault. Notes are stored as markdown with optional YAML frontmatter. Prefer search_notes over list_notes when looking for content. For modifying notes: prefer edit_note (find/replace) when changing a small region of an existing note; use update_note when you need to rewrite the body wholesale or change frontmatter; use append_to_note only for appending to the end. Avoid delete_note + create_note for in-place changes.",
     },
   );
 
   // Register tools individually rather than via a loop because the SDK
   // generic infers the input-schema type per call; iterating collapses
-  // all eight factories into a union and the inferred schema goes wrong.
+  // all nine factories into a union and the inferred schema goes wrong.
   const reg = (t: { name: string; config: never; handler: never }) =>
     server.registerTool(t.name, t.config, t.handler);
   reg(listNotes(runtime) as never);
@@ -40,6 +41,7 @@ export const buildMcpServer = (runtime: ServerRuntime): McpServer => {
   reg(createNote(runtime) as never);
   reg(updateNote(runtime) as never);
   reg(appendToNote(runtime) as never);
+  reg(editNote(runtime) as never);
   reg(deleteNote(runtime) as never);
   reg(listRecentChanges(runtime) as never);
 

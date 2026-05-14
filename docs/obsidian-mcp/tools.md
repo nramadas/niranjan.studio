@@ -1,6 +1,17 @@
 # MCP tool reference
 
-The server exposes eight tools. Each one's description and input schema are also surfaced to Claude through the MCP `tools/list` response — you don't normally need to memorise them, just call the tool and let Claude pick.
+The server exposes nine tools. Each one's description and input schema are also surfaced to Claude through the MCP `tools/list` response — you don't normally need to memorise them, just call the tool and let Claude pick.
+
+## Choosing a write tool
+
+There are four write tools and they aren't interchangeable:
+
+- `edit_note` — change a small region of the body via find/replace. Best for targeted fixes; preserves the surrounding content exactly and avoids the latency of resending the full body.
+- `append_to_note` — add content to the end. Useful for daily-note workflows.
+- `update_note` — replace the body wholesale, patch frontmatter, or both. Use when the change touches frontmatter, or when most of the body is changing anyway.
+- `create_note` — make a new note. Fails if one already exists at the path.
+
+Avoid `delete_note` + `create_note` as a way to edit; use one of the in-place tools above.
 
 ## `list_notes`
 
@@ -45,6 +56,8 @@ Input:
 - `path` (string).
 - `body` (string): markdown body, may be empty.
 - `frontmatter` (optional object): flat key/value YAML frontmatter. Renders to `---\nkey: value\n---` at the top.
+  - Array values produce YAML inline-flow sequences. `{ "tags": ["draft", "idea"] }` becomes `tags: [draft, idea]`, which Obsidian parses as a real list.
+  - Strings, numbers, booleans, and null are written as YAML scalars. Strings containing colons, brackets, or other YAML-reserved characters are quoted automatically.
 
 Returns: the created `NoteRead`.
 
@@ -57,9 +70,11 @@ Update an existing note's body, frontmatter, or both.
 Input:
 - `path` (string).
 - `body` (optional string): replaces the body. If omitted, the body is preserved.
-- `frontmatter` (optional object): merged with existing frontmatter (existing keys overwritten).
+- `frontmatter` (optional object): patch merged with the existing frontmatter (existing keys are overwritten by patch values, untouched keys are preserved). Same value-handling rules as `create_note`: arrays render as inline YAML sequences, scalars as YAML scalars, ambiguous strings get auto-quoted.
 
 Returns: the updated `NoteRead`.
+
+Use this when you need to rewrite the body wholesale, or change frontmatter, or both. For small in-place body edits, prefer `edit_note` — it's cheaper and reduces the risk of accidentally rewriting unchanged content.
 
 Conflict-aware: reads current revision, retries once on a 409, then surfaces `NoteConflictError`. Fails with `NoteNotFoundError` if the path doesn't exist.
 
@@ -72,6 +87,22 @@ Input:
 - `content` (string): block of markdown to append. A newline is inserted between the existing body and the appended content if the body doesn't already end with one.
 
 Returns: the updated `NoteRead`.
+
+## `edit_note`
+
+Apply a find/replace edit to a note's body without rewriting the whole note. Preserves everything outside the match exactly, so it's the right call for targeted fixes and minimises the chance of accidentally clobbering surrounding content.
+
+Input:
+- `path` (string).
+- `old_string` (string): exact substring to replace. Whitespace and newlines match literally — copy the exact text from a prior `read_note` call.
+- `new_string` (string): replacement text. May be empty to delete the matched region.
+- `replace_all` (optional boolean, default `false`): when true, replaces every occurrence in the body. When false, fails with `StringMatchError` if `old_string` appears more than once.
+
+Returns: the updated `NoteRead`.
+
+Frontmatter is not searched — `old_string` only matches body content. To change frontmatter, use `update_note`.
+
+Fails with `NoteNotFoundError` if the path doesn't exist, or `StringMatchError` with `reason: "not_found"` if `old_string` isn't present, or `reason: "ambiguous"` (plus an `occurrences` count) if it appears multiple times with `replace_all: false`.
 
 ## `delete_note`
 
@@ -97,6 +128,7 @@ All tools surface tagged errors as structured `isError: true` tool results rathe
 
 - `NoteNotFoundError { path }`
 - `NoteConflictError { path, message }`
+- `StringMatchError { path, reason, occurrences }` — surfaced by `edit_note` when `old_string` isn't found (`reason: "not_found"`) or appears more than once with `replace_all: false` (`reason: "ambiguous"`). The `occurrences` field is the exact count.
 - `DecryptionError { docId, message }` — usually means the LiveSync passphrase doesn't match what was used to encrypt the doc. See [troubleshooting.md](troubleshooting.md).
 - `EncryptionError { path, message }` — write-side counterpart.
 - `CouchDbError { op, status, message }`

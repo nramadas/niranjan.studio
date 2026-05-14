@@ -16,7 +16,7 @@ const inputShape = {
     .record(z.unknown())
     .optional()
     .describe(
-      "Frontmatter patch — merged with the existing frontmatter (existing keys are overwritten, untouched keys are preserved).",
+      "Frontmatter patch — merged with the existing frontmatter (existing keys are overwritten, untouched keys are preserved). Pass list-valued keys as JSON arrays — `{\"tags\": [\"draft\", \"idea\"]}` becomes `tags: [draft, idea]` in YAML, which Obsidian parses as a real list. Strings, numbers, booleans, and null are written as YAML scalars.",
     ),
 } as const;
 

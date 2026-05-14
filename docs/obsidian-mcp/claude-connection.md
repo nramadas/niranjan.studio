@@ -18,7 +18,7 @@ That's it. No client ID, no client secret, no service tokens, no bearer tokens t
 4. A new browser tab opens to `https://mcp.<your-domain>/authorize`, which redirects to Google's sign-in screen. Sign in with one of the emails listed in `mcp_allowed_emails`.
 5. Google redirects back to the MCP server, which validates your identity, mints an authorization code, and redirects to Claude's callback URL.
 6. Claude exchanges the code for an access + refresh token at `/token` and remembers them.
-7. The connector page should now show eight tools (`list_notes`, `read_note`, `search_notes`, `create_note`, `update_note`, `append_to_note`, `delete_note`, `list_recent_changes`). You're connected.
+7. The connector page should now show nine tools (`list_notes`, `read_note`, `search_notes`, `create_note`, `update_note`, `append_to_note`, `edit_note`, `delete_note`, `list_recent_changes`). You're connected.
 
 ## Desktop (Claude Desktop app)
 

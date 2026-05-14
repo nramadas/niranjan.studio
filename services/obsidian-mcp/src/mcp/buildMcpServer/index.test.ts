@@ -13,6 +13,7 @@ const stubVault: VaultImpl = {
   createNote: () => Effect.succeed({} as never),
   updateNote: () => Effect.succeed({} as never),
   appendToNote: () => Effect.succeed({} as never),
+  editNote: () => Effect.succeed({} as never),
   deleteNote: () => Effect.void,
 };
 
@@ -22,7 +23,7 @@ const stubSearch = {
 };
 
 describe("buildMcpServer", () => {
-  it("constructs an McpServer with all eight tools registered", async () => {
+  it("constructs an McpServer with all nine tools registered", async () => {
     const layer = Layer.merge(Layer.succeed(Vault, stubVault), Layer.succeed(SearchIndex, stubSearch));
     const runtime = ManagedRuntime.make(layer);
     const inner = await runtime.runtime();

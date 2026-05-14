@@ -24,6 +24,7 @@ describe("appendToNote tool", () => {
       createNote: () => Effect.succeed({} as never),
       updateNote: () => Effect.succeed({} as never),
       appendToNote: appendSpy as never,
+      editNote: () => Effect.succeed({} as never),
       deleteNote: () => Effect.void,
     };
     const runtime = ManagedRuntime.make(Layer.succeed(Vault, stub));

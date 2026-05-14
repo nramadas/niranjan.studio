@@ -46,6 +46,16 @@ const stub: VaultImpl = {
       ctime: 0,
       size: 0,
     }),
+  editNote: (path) =>
+    Effect.succeed({
+      path,
+      _rev: "2-stub",
+      frontmatter: {},
+      body: "",
+      mtime: 0,
+      ctime: 0,
+      size: 0,
+    }),
   deleteNote: () => Effect.void,
 };
 

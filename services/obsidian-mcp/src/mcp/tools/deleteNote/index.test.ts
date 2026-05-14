@@ -14,6 +14,7 @@ describe("deleteNote tool", () => {
       createNote: () => Effect.succeed({} as never),
       updateNote: () => Effect.succeed({} as never),
       appendToNote: () => Effect.succeed({} as never),
+      editNote: () => Effect.succeed({} as never),
       deleteNote: deleteSpy as never,
     };
     const runtime = ManagedRuntime.make(Layer.succeed(Vault, stub));

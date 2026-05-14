@@ -8,4 +8,5 @@ export * from "./EncryptionError";
 export * from "./NoteConflictError";
 export * from "./NoteNotFoundError";
 export * from "./OAuthError";
+export * from "./StringMatchError";
 export * from "./ValidationError";

@@ -207,7 +207,7 @@ Expected: `HTTP/2 401` with a `WWW-Authenticate` header pointing at `/.well-know
 
 ## 9. Connect Claude
 
-See [claude-connection.md](claude-connection.md) for the connector walkthrough on web, desktop, iPad, and iPhone. Quick version: in Claude's connector dialog, paste `https://mcp.<your-domain>/mcp` as the server URL and let Claude do the OAuth dance. Sign in with Google when prompted. The first request after sign-in lists the eight MCP tools.
+See [claude-connection.md](claude-connection.md) for the connector walkthrough on web, desktop, iPad, and iPhone. Quick version: in Claude's connector dialog, paste `https://mcp.<your-domain>/mcp` as the server URL and let Claude do the OAuth dance. Sign in with Google when prompted. The first request after sign-in lists the nine MCP tools.
 
 After Claude is connected, exercise the round trip:
 
