@@ -262,6 +262,47 @@ resource "google_cloud_run_v2_service" "obsidian_mcp" {
         value = "info"
       }
 
+      # ─── Phase 3: vault-indexer client config ───────────────────────
+      env {
+        name  = "INDEXER_URL"
+        value = "https://${var.indexer_subdomain}.${var.domain}"
+      }
+
+      env {
+        name  = "INDEXER_TIMEOUT_MS"
+        value = "3000"
+      }
+
+      env {
+        name = "INDEXER_BEARER_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.vault_indexer_search_token.secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      env {
+        name = "INDEXER_CF_ACCESS_CLIENT_ID"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.vault_indexer_cf_access_client_id.secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      env {
+        name = "INDEXER_CF_ACCESS_CLIENT_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.vault_indexer_cf_access_client_secret.secret_id
+            version = "latest"
+          }
+        }
+      }
+
       env {
         name = "COUCHDB_PASSWORD"
         value_source {
@@ -327,6 +368,25 @@ resource "google_cloud_run_v2_service" "obsidian_mcp" {
     google_secret_manager_secret_iam_member.obsidian_livesync_passphrase_accessor,
     google_secret_manager_secret_iam_member.obsidian_mcp_oauth_signing_key_accessor,
     google_secret_manager_secret_iam_member.obsidian_mcp_google_oauth_client_secret_accessor,
+    google_secret_manager_secret_iam_member.vault_indexer_search_token_mcp,
+    google_secret_manager_secret_iam_member.vault_indexer_cf_access_client_id_mcp,
+    google_secret_manager_secret_iam_member.vault_indexer_cf_access_client_secret_mcp,
+    # Cloud Run validates that every env-var-from-secret references a
+    # secret with at least one version at apply time. The Phase 2
+    # placeholder versions are fast to create (TF-local data), but the
+    # Phase 3 CF Access versions read from a Cloudflare-API-backed
+    # resource and can take seconds. Without these explicit dependencies,
+    # the Cloud Run update races ahead of the version writes and fails
+    # with "Secret … versions/latest was not found". The placeholder
+    # versions are listed too so the same race can't bite a future
+    # secret_version regeneration.
+    google_secret_manager_secret_version.obsidian_mcp_couchdb_password,
+    google_secret_manager_secret_version.obsidian_livesync_passphrase_placeholder,
+    google_secret_manager_secret_version.obsidian_mcp_oauth_signing_key_placeholder,
+    google_secret_manager_secret_version.obsidian_mcp_google_oauth_client_secret_placeholder,
+    google_secret_manager_secret_version.vault_indexer_search_token,
+    google_secret_manager_secret_version.vault_indexer_cf_access_client_id,
+    google_secret_manager_secret_version.vault_indexer_cf_access_client_secret,
   ]
 }
 

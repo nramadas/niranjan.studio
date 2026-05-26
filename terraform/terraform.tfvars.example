@@ -56,3 +56,9 @@ google_oauth_client_id = "REPLACE_ME.apps.googleusercontent.com"
 mcp_allowed_emails = [
   "you@example.com",
 ]
+
+# ─── Vault indexer (Phase 3) ────────────────────────────────────────────────
+# The indexer runs on the existing Phase 1 VM (no new compute) and is
+# reachable only over the Cloudflare tunnel at indexer.<domain>, gated by
+# Cloudflare Access + a bearer token. Defaults are usually fine.
+# indexer_subdomain = "indexer"

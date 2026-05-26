@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
+import { OAuthError } from "@niranjan/vault-shared/lib/errors";
 import { Effect } from "effect";
-import { OAuthError } from "../../lib/errors/OAuthError";
 
 /**
  * Verify a PKCE `code_verifier` against the `code_challenge` recorded at

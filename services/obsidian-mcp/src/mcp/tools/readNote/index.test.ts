@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { Vault, type VaultImpl } from "@niranjan/vault-shared/couchdb";
+import { NoteNotFoundError } from "@niranjan/vault-shared/lib/errors";
 import { Effect, Layer, ManagedRuntime } from "effect";
+import { describe, expect, it } from "vitest";
 import { readNote } from "./index.ts";
-import { Vault, type VaultImpl } from "../../../couchdb/Vault";
-import { NoteNotFoundError } from "../../../lib/errors/NoteNotFoundError";
 
 const stubVault: VaultImpl = {
   listNotes: () => Effect.succeed([]),
@@ -19,11 +19,12 @@ const stubVault: VaultImpl = {
           size: 5,
         })
       : Effect.fail(new NoteNotFoundError({ path })),
+  readNoteById: () => Effect.fail(new Error("stub")) as never,
   readAllForIndex: () => Effect.succeed([]),
   createNote: () => Effect.succeed({} as never),
   updateNote: () => Effect.succeed({} as never),
   appendToNote: () => Effect.succeed({} as never),
-      editNote: () => Effect.succeed({} as never),
+  editNote: () => Effect.succeed({} as never),
   deleteNote: () => Effect.void,
 };
 

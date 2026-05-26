@@ -1,0 +1,43 @@
+{
+  "name": "vault-indexer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Always-on indexer for the Obsidian vault. Subscribes to CouchDB _changes, decrypts LiveSync E2EE content, chunks markdown notes, embeds them in-process via bge-small, stores vectors in a local sqlite-vec file, and serves a private /search endpoint used by the Cloud Run MCP server.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsup",
+    "start": "node dist/main.js",
+    "backfill": "node dist/backfill.js",
+    "eval": "node dist/eval.js",
+    "dev": "tsx watch src/main.ts",
+    "lint": "biome check src",
+    "format": "biome format --write src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "@niranjan/vault-shared": "workspace:*",
+    "better-sqlite3": "^11.3.0",
+    "effect": "^3.21.0",
+    "nano": "^11.0.5",
+    "octagonal-wheels": "^0.1.45",
+    "onnxruntime-node": "^1.24.3",
+    "sqlite-vec": "^0.1.9",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

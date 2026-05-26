@@ -88,7 +88,16 @@ main() {
   log_info "Building image (linux/amd64 — Cloud Run runs amd64)..."
   # --platform=linux/amd64 because Apple silicon devs default to arm64
   # otherwise, and Cloud Run rejects arm64 images.
-  docker build --platform=linux/amd64 -t "$image" -t "$image_latest" "$service_dir"
+  #
+  # The Docker context is the repo root (not the service dir) so the
+  # @niranjan/vault-shared workspace package is reachable; we point at the
+  # service Dockerfile explicitly. See services/obsidian-mcp/Dockerfile for
+  # the why.
+  docker build \
+    --platform=linux/amd64 \
+    -t "$image" -t "$image_latest" \
+    -f "${service_dir}/Dockerfile" \
+    "$repo_root"
 
   log_info "Pushing image..."
   docker push "$image"

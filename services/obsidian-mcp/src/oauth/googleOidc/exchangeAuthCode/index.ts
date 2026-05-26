@@ -1,5 +1,5 @@
+import { OAuthError } from "@niranjan/vault-shared/lib/errors";
 import { Effect, Redacted } from "effect";
-import { OAuthError } from "../../../lib/errors/OAuthError";
 import { GOOGLE_TOKEN_ENDPOINT } from "../constants.ts";
 
 /**

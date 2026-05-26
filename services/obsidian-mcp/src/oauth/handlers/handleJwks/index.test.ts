@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { exportPKCS8, generateKeyPair } from "jose";
 import { Effect, Redacted } from "effect";
-import { handleJwks } from "./index.ts";
+import { exportPKCS8, generateKeyPair } from "jose";
+import { describe, expect, it } from "vitest";
 import { SigningKeyLayer } from "../../SigningKeyLayer";
+import { handleJwks } from "./index.ts";
 
 describe("handleJwks", () => {
   it("returns a JWKS containing the public JWK", async () => {
@@ -23,7 +23,9 @@ describe("handleJwks", () => {
     expect(out.kind).toBe("json");
     if (out.kind === "json") {
       expect(out.status).toBe(200);
-      const body = out.body as { keys: Array<{ alg?: string; use?: string; kid?: string; kty?: string }> };
+      const body = out.body as {
+        keys: Array<{ alg?: string; use?: string; kid?: string; kty?: string }>;
+      };
       expect(body.keys).toHaveLength(1);
       expect(body.keys[0]?.alg).toBe("RS256");
       expect(body.keys[0]?.use).toBe("sig");

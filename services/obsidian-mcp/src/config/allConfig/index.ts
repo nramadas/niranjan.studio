@@ -1,8 +1,9 @@
+import { couchDbConfig } from "@niranjan/vault-shared/config/couchDbConfig";
+import { liveSyncConfig } from "@niranjan/vault-shared/config/liveSyncConfig";
 import { Config } from "effect";
 import { allowedEmailsConfig } from "../allowedEmailsConfig";
-import { couchDbConfig } from "../couchDbConfig";
 import { googleOidcConfig } from "../googleOidcConfig";
-import { liveSyncConfig } from "../liveSyncConfig";
+import { indexerConfig } from "../indexerConfig";
 import { oauthConfig } from "../oauthConfig";
 import { searchConfig } from "../searchConfig";
 import { serverConfig } from "../serverConfig";
@@ -21,6 +22,7 @@ export const allConfig = Config.all({
   allowedEmails: allowedEmailsConfig,
   server: serverConfig,
   search: searchConfig,
+  indexer: indexerConfig,
 });
 
 export type AppConfig = Config.Config.Success<typeof allConfig>;

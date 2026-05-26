@@ -1,10 +1,10 @@
+import { OAuthError } from "@niranjan/vault-shared/lib/errors";
 import { Effect } from "effect";
-import { OAuthError } from "../../../lib/errors/OAuthError";
+import { SigningKey } from "../../SigningKey";
 import { decodeAuthorizationCode } from "../../decodeAuthorizationCode";
 import { decodeRefreshToken } from "../../decodeRefreshToken";
 import { encodeAccessToken } from "../../encodeAccessToken";
 import { encodeRefreshToken } from "../../encodeRefreshToken";
-import { SigningKey } from "../../SigningKey";
 import type { HandlerResponse, TokenResponse } from "../../types.ts";
 import { verifyPkce } from "../../verifyPkce";
 

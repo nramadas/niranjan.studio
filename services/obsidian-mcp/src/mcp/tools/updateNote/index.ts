@@ -1,6 +1,6 @@
+import { Vault } from "@niranjan/vault-shared/couchdb";
 import { Effect } from "effect";
 import { z } from "zod";
-import { Vault } from "../../../couchdb/Vault";
 import { runTool } from "../../runTool";
 import type { ServerRuntime } from "../../types.ts";
 
@@ -16,7 +16,7 @@ const inputShape = {
     .record(z.unknown())
     .optional()
     .describe(
-      "Frontmatter patch — merged with the existing frontmatter (existing keys are overwritten, untouched keys are preserved). Pass list-valued keys as JSON arrays — `{\"tags\": [\"draft\", \"idea\"]}` becomes `tags: [draft, idea]` in YAML, which Obsidian parses as a real list. Strings, numbers, booleans, and null are written as YAML scalars.",
+      'Frontmatter patch — merged with the existing frontmatter (existing keys are overwritten, untouched keys are preserved). Pass list-valued keys as JSON arrays — `{"tags": ["draft", "idea"]}` becomes `tags: [draft, idea]` in YAML, which Obsidian parses as a real list. Strings, numbers, booleans, and null are written as YAML scalars.',
     ),
 } as const;
 
@@ -30,7 +30,10 @@ const config = {
 const handler =
   (runtime: ServerRuntime) =>
   async (args: { path: string; body?: string; frontmatter?: Record<string, unknown> }) =>
-    runTool(runtime, "update_note")(
+    runTool(
+      runtime,
+      "update_note",
+    )(
       Effect.gen(function* () {
         const vault = yield* Vault;
         return yield* vault.updateNote(args.path, args.body, args.frontmatter);

@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { exportPKCS8, generateKeyPair } from "jose";
 import { Effect, Exit, Redacted } from "effect";
-import { decodeRefreshToken } from "./index.ts";
-import { encodeRefreshToken } from "../encodeRefreshToken";
-import { encodeAccessToken } from "../encodeAccessToken";
+import { exportPKCS8, generateKeyPair } from "jose";
+import { describe, expect, it } from "vitest";
 import { SigningKeyLayer } from "../SigningKeyLayer";
+import { encodeAccessToken } from "../encodeAccessToken";
+import { encodeRefreshToken } from "../encodeRefreshToken";
+import { decodeRefreshToken } from "./index.ts";
 
 const ISS = "https://mcp.test";
 

@@ -5,9 +5,10 @@
 
 export * from "./allConfig";
 export * from "./allowedEmailsConfig";
-export * from "./couchDbConfig";
+export * from "@niranjan/vault-shared/config/couchDbConfig";
 export * from "./googleOidcConfig";
-export * from "./liveSyncConfig";
+export * from "./indexerConfig";
+export * from "@niranjan/vault-shared/config/liveSyncConfig";
 export * from "./oauthConfig";
 export * from "./searchConfig";
 export * from "./serverConfig";

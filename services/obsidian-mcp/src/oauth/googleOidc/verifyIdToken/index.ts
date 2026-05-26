@@ -1,6 +1,6 @@
+import { OAuthError } from "@niranjan/vault-shared/lib/errors";
 import { Effect } from "effect";
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import { OAuthError } from "../../../lib/errors/OAuthError";
 import { GOOGLE_ISSUER, GOOGLE_JWKS_URI } from "../constants.ts";
 
 // jose's createRemoteJWKSet caches the JWKS for the configured TTL and

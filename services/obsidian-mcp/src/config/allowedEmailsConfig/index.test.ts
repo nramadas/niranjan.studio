@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { ConfigProvider, Effect } from "effect";
+import { describe, expect, it } from "vitest";
 import { allowedEmailsConfig } from "./index.ts";
 
 describe("allowedEmailsConfig", () => {
@@ -7,7 +7,9 @@ describe("allowedEmailsConfig", () => {
     const out = await Effect.runPromise(
       allowedEmailsConfig.pipe(
         Effect.withConfigProvider(
-          ConfigProvider.fromMap(new Map([["ALLOWED_EMAILS", "Alice@example.com, bob@example.com "]])),
+          ConfigProvider.fromMap(
+            new Map([["ALLOWED_EMAILS", "Alice@example.com, bob@example.com "]]),
+          ),
         ),
       ),
     );

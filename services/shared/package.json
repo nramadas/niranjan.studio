@@ -1,0 +1,44 @@
+{
+  "name": "@niranjan/vault-shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared library for the Obsidian vault stack: CouchDB client, LiveSync E2EE codec, tagged errors, Cloud-Logging-compatible JSON logger, shared Effect Config modules. Consumed by services/obsidian-mcp (Cloud Run) and services/vault-indexer (on-VM).",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "sideEffects": false,
+  "exports": {
+    "./couchdb": "./src/couchdb/index.ts",
+    "./couchdb/types": "./src/couchdb/types.ts",
+    "./couchdb/constants": "./src/couchdb/constants.ts",
+    "./lib": "./src/lib/index.ts",
+    "./lib/errors": "./src/lib/errors/index.ts",
+    "./lib/cloudRunLogger": "./src/lib/cloudRunLogger/index.ts",
+    "./lib/isIndexablePath": "./src/lib/isIndexablePath/index.ts",
+    "./config": "./src/config/index.ts",
+    "./config/couchDbConfig": "./src/config/couchDbConfig/index.ts",
+    "./config/liveSyncConfig": "./src/config/liveSyncConfig/index.ts"
+  },
+  "scripts": {
+    "lint": "biome check src",
+    "format": "biome format --write src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "effect": "^3.21.0",
+    "nano": "^11.0.5",
+    "octagonal-wheels": "^0.1.45"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@types/node": "^22.0.0",
+    "effect": "^3.21.0",
+    "nano": "^11.0.5",
+    "octagonal-wheels": "^0.1.45",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

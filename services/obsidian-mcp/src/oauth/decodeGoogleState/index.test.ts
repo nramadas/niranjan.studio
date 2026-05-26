@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { exportPKCS8, generateKeyPair } from "jose";
 import { Effect, Exit, Redacted } from "effect";
-import { decodeGoogleState } from "./index.ts";
-import { encodeGoogleState } from "../encodeGoogleState";
+import { exportPKCS8, generateKeyPair } from "jose";
+import { describe, expect, it } from "vitest";
 import { SigningKeyLayer } from "../SigningKeyLayer";
+import { encodeGoogleState } from "../encodeGoogleState";
+import { decodeGoogleState } from "./index.ts";
 
 const mkLayer = async () => {
   const { privateKey } = await generateKeyPair("RS256", { modulusLength: 2048, extractable: true });

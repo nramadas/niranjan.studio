@@ -113,3 +113,30 @@ output "obsidian_mcp_logs_command" {
   description = "Tail Cloud Run logs for the MCP service."
   value       = "gcloud run services logs tail obsidian-mcp --project=${var.gcp_project_id} --region=${var.gcp_region}"
 }
+
+# ─── Vault indexer (Phase 3) ────────────────────────────────────────────────
+
+output "vault_indexer_url" {
+  description = "Internal URL the MCP server uses to reach the vault-indexer /search endpoint. Cloudflare Access gates it; not a public address."
+  value       = "https://${var.indexer_subdomain}.${var.domain}"
+}
+
+output "vault_indexer_artifact_repo" {
+  description = "Artifact Registry repo URL used by scripts/vault-indexer/deploy.sh."
+  value       = "${google_artifact_registry_repository.vault_indexer.location}-docker.pkg.dev/${var.gcp_project_id}/${google_artifact_registry_repository.vault_indexer.repository_id}"
+}
+
+output "vault_indexer_search_token_fetch_command" {
+  description = "Locally fetch the indexer's /search bearer token. Used by scripts/vault-indexer/deploy.sh when populating the VM .env file."
+  value       = "gcloud secrets versions access latest --project=${var.gcp_project_id} --secret=${google_secret_manager_secret.vault_indexer_search_token.secret_id}"
+}
+
+output "vault_indexer_openai_key_set_command" {
+  description = "One-time command to populate the OpenAI API key used by the evaluation harness. Leave the placeholder in place if you never plan to run a hosted-model comparison."
+  value       = "printf '%s' '<paste openai key here>' | gcloud secrets versions add ${google_secret_manager_secret.vault_indexer_openai_key.secret_id} --project=${var.gcp_project_id} --data-file=-"
+}
+
+output "vault_indexer_logs_command" {
+  description = "Tail indexer container logs over SSH."
+  value       = "gcloud compute ssh ${google_compute_instance.obsidian.name} --project=${var.gcp_project_id} --zone=${var.gcp_zone} --command 'cd /opt/obsidian && docker compose logs --tail 200 -f vault-indexer'"
+}

@@ -1,5 +1,5 @@
+import { OAuthError } from "@niranjan/vault-shared/lib/errors";
 import { Effect } from "effect";
-import { OAuthError } from "../../lib/errors/OAuthError";
 import { SigningKey } from "../SigningKey";
 import type { AccessTokenPayload } from "../types.ts";
 

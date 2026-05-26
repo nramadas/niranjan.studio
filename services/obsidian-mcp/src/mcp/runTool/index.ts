@@ -5,7 +5,7 @@ const renderError = (err: unknown): ToolErrorPayload => {
   if (err && typeof err === "object" && "_tag" in err) {
     const tag = String((err as { _tag: unknown })._tag);
     const fields = { ...(err as Record<string, unknown>) };
-    delete (fields as { _tag?: unknown })._tag;
+    (fields as { _tag?: unknown })._tag = undefined;
     const msg = "message" in err ? String((err as { message: unknown }).message) : tag;
     return { tag, message: msg, fields };
   }

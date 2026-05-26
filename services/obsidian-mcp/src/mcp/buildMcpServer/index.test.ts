@@ -1,14 +1,16 @@
-import { describe, expect, it } from "vitest";
-import { Effect, Layer, ManagedRuntime } from "effect";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { buildMcpServer } from "./index.ts";
-import { Vault, type VaultImpl } from "../../couchdb/Vault";
+import { Vault, type VaultImpl } from "@niranjan/vault-shared/couchdb";
+import { Effect, Layer, ManagedRuntime } from "effect";
+import { describe, expect, it } from "vitest";
+import { IndexerClient } from "../../search/IndexerClient";
 import { SearchIndex } from "../../search/SearchIndex";
+import { buildMcpServer } from "./index.ts";
 
 const stubVault: VaultImpl = {
   listNotes: () => Effect.succeed([]),
   listRecent: () => Effect.succeed([]),
   readNote: () => Effect.succeed({} as never),
+  readNoteById: () => Effect.fail(new Error("stub")) as never,
   readAllForIndex: () => Effect.succeed([]),
   createNote: () => Effect.succeed({} as never),
   updateNote: () => Effect.succeed({} as never),
@@ -22,9 +24,17 @@ const stubSearch = {
   markDirty: () => Effect.void,
 };
 
+const stubIndexerClient = {
+  search: () => Effect.succeed([]),
+};
+
 describe("buildMcpServer", () => {
   it("constructs an McpServer with all nine tools registered", async () => {
-    const layer = Layer.merge(Layer.succeed(Vault, stubVault), Layer.succeed(SearchIndex, stubSearch));
+    const layer = Layer.mergeAll(
+      Layer.succeed(Vault, stubVault),
+      Layer.succeed(SearchIndex, stubSearch),
+      Layer.succeed(IndexerClient, stubIndexerClient),
+    );
     const runtime = ManagedRuntime.make(layer);
     const inner = await runtime.runtime();
     const server = buildMcpServer(inner);

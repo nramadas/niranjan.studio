@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { Effect, Exit } from "effect";
+import { describe, expect, it } from "vitest";
 import { handleRegister } from "./index.ts";
 
 describe("handleRegister", () => {
@@ -23,7 +23,8 @@ describe("handleRegister", () => {
   it("rejects a missing or empty redirect_uris", async () => {
     const exit = await Effect.runPromiseExit(handleRegister({}));
     expect(Exit.isFailure(exit)).toBe(true);
-    if (Exit.isFailure(exit)) expect(JSON.stringify(exit.cause)).toContain("redirect_uris must be a non-empty array");
+    if (Exit.isFailure(exit))
+      expect(JSON.stringify(exit.cause)).toContain("redirect_uris must be a non-empty array");
   });
 
   it("rejects a non-https redirect_uri (except localhost)", async () => {

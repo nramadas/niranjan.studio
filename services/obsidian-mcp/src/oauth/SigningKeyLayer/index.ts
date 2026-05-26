@@ -1,14 +1,14 @@
+import { OAuthError } from "@niranjan/vault-shared/lib/errors";
 import { type Config, Effect, Layer, Redacted } from "effect";
 import {
+  SignJWT,
   calculateJwkThumbprint,
   exportJWK,
   importJWK,
   importPKCS8,
   jwtVerify,
-  SignJWT,
 } from "jose";
 import { oauthConfig } from "../../config/oauthConfig";
-import { OAuthError } from "../../lib/errors/OAuthError";
 import { SigningKey, type SigningKeyImpl } from "../SigningKey";
 
 type OAuthCfg = Config.Config.Success<typeof oauthConfig>;
@@ -38,7 +38,9 @@ const buildImpl = (cfg: OAuthCfg): Effect.Effect<SigningKeyImpl, OAuthError> =>
       for (const k of ["d", "p", "q", "dp", "dq", "qi"]) delete publicJwk[k];
       publicJwk.alg = ALG;
       publicJwk.use = "sig";
-      const kid = await calculateJwkThumbprint(publicJwk as Parameters<typeof calculateJwkThumbprint>[0]);
+      const kid = await calculateJwkThumbprint(
+        publicJwk as Parameters<typeof calculateJwkThumbprint>[0],
+      );
       publicJwk.kid = kid;
 
       // jose's jwtVerify requires the *public* key for asymmetric

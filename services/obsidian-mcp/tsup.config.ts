@@ -24,4 +24,10 @@ export default defineConfig({
   minify: false,
   // node:* and npm package imports stay external. Only our `src/` is bundled.
   external: [/^node:/, /^@modelcontextprotocol\//, "effect", "jose", "nano", "octagonal-wheels", "zod"],
+  // Force-bundle the workspace package. tsup auto-externalizes anything
+  // in `dependencies`, but @niranjan/vault-shared lives only at build
+  // time — its runtime resolution would be a dangling symlink in the
+  // container image (services/shared is outside the copied node_modules
+  // tree). Bundling it into dist/main.js sidesteps that entirely.
+  noExternal: ["@niranjan/vault-shared"],
 });

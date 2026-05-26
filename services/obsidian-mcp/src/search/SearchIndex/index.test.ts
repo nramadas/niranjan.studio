@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { Effect, Layer } from "effect";
+import { describe, expect, it } from "vitest";
 import { SearchIndex } from "./index.ts";
 
 describe("SearchIndex", () => {

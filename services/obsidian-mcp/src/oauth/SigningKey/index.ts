@@ -1,6 +1,6 @@
+import type { OAuthError } from "@niranjan/vault-shared/lib/errors";
 import { Context, type Effect } from "effect";
 import type { JWK, JWTPayload } from "jose";
-import type { OAuthError } from "../../lib/errors/OAuthError";
 
 /**
  * Optional sign-time overrides. `expiresInSeconds` overrides the token's
@@ -27,10 +27,7 @@ export interface SigningKeyImpl {
   /** Public JWK ready for /.well-known/jwks.json. Carries `kid`, `alg`, `use`. */
   readonly publicJwk: JWK;
   /** Sign a JWT with our private key. Always RS256; header includes `kid`. */
-  readonly sign: (
-    payload: JWTPayload,
-    opts?: SignOptions,
-  ) => Effect.Effect<string, OAuthError>;
+  readonly sign: (payload: JWTPayload, opts?: SignOptions) => Effect.Effect<string, OAuthError>;
   /**
    * Verify a JWT was signed by us. Returns the decoded payload (with
    * standard claims like `exp`, `iat` validated). Fails OAuthError on

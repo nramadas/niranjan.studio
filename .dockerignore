@@ -1,0 +1,47 @@
+# Repo-root .dockerignore. Applies when the Docker build context is the
+# repo root, which is the case for both Phase 2 (obsidian-mcp) and Phase
+# 3 (vault-indexer) — their Dockerfiles need access to services/shared/
+# at sibling level, so the build context can't be a service subdir.
+#
+# The per-service .dockerignore files inside services/*/.dockerignore are
+# NOT applied when the build context is the repo root; this file is the
+# source of truth.
+
+# Heavy or stateful directories that should never end up in the build context.
+**/node_modules
+**/dist
+**/.pnpm-store
+
+# Terraform local state — provider binaries are hundreds of MB.
+terraform/.terraform
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfplan
+terraform/backend.hcl
+terraform/terraform.tfvars
+terraform/terraform.tfvars.json
+
+# Local env files — never ship secrets in an image.
+**/.env
+**/.env.*
+!**/.env.example
+
+# OS / editor cruft.
+.DS_Store
+**/.idea
+**/.vscode
+**/*.swp
+**/*.swo
+
+# Git internals — irrelevant inside the image.
+.git
+.gitignore
+
+# Build / agent state directories.
+.claude
+.cursor
+
+# Phase 3: model files are pulled inside the model-fetch Docker stage,
+# not from the host context. If a previous build left a local cache,
+# don't push the megabytes through the build daemon.
+services/vault-indexer/model

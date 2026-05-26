@@ -1,7 +1,7 @@
+import { AuthError } from "@niranjan/vault-shared/lib/errors";
 import { Effect, Layer } from "effect";
-import { AuthError } from "../../lib/errors/AuthError";
-import { decodeAccessToken } from "../../oauth/decodeAccessToken";
 import { SigningKey } from "../../oauth/SigningKey";
+import { decodeAccessToken } from "../../oauth/decodeAccessToken";
 import { AuthProvider } from "../AuthProvider";
 import type { AuthProviderImpl, AuthRequest, Identity } from "../types.ts";
 
@@ -18,7 +18,9 @@ const extractBearer = (req: AuthRequest): string | undefined => {
   return match?.[1];
 };
 
-const buildImpl = (cfg: OAuthAuthProviderConfig): Effect.Effect<AuthProviderImpl, never, SigningKey> =>
+const buildImpl = (
+  cfg: OAuthAuthProviderConfig,
+): Effect.Effect<AuthProviderImpl, never, SigningKey> =>
   Effect.gen(function* () {
     const sk = yield* SigningKey;
     const impl: AuthProviderImpl = {

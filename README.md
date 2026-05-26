@@ -6,6 +6,7 @@ Terraform and supporting scripts for personal cloud infrastructure on GCP. The r
 
 - **Obsidian sync** (Phase 1): self-hosted CouchDB on a GCE `e2-micro` VM, exposed via Cloudflare Tunnel, syncing to Obsidian on Mac, iPad, and iPhone via the Self-hosted LiveSync plugin. See [docs/obsidian/setup.md](docs/obsidian/setup.md).
 - **Obsidian MCP server** (Phase 2): a Cloud Run service that exposes the same vault to Claude over the Model Context Protocol. Reads and writes encrypted notes through the LiveSync E2EE format. Reached at `mcp.<domain>` via Cloud Run's native domain mapping (no Cloudflare in this path); gated by an OAuth 2.1 server inside the service that uses Google as the OIDC identity provider. See [docs/obsidian-mcp/setup.md](docs/obsidian-mcp/setup.md).
+- **Vault indexer** (Phase 3): an always-on container running next to CouchDB on the Phase 1 VM. Subscribes to the CouchDB `_changes` feed, decrypts notes, chunks them by markdown structure, embeds the chunks in-process via `bge-small-en-v1.5`, stores 384-dim vectors in a `sqlite-vec` file, and exposes a private `/search` endpoint that the MCP server calls (over a Cloudflare Access-gated tunnel) as the semantic arm of `search_notes` hybrid retrieval. See [docs/vault-indexer/setup.md](docs/vault-indexer/setup.md).
 
 ## Read this before you spend money
 
@@ -13,6 +14,7 @@ Terraform and supporting scripts for personal cloud infrastructure on GCP. The r
 - **GCP free tier is per billing account, not per project.** If your billing account already runs an `e2-micro` somewhere, this VM will not be free. Check `gcloud compute instances list --billing-account=<id>` before applying.
 - The CouchDB end-to-end-encryption passphrase you'll set during client setup is **unrecoverable**. Save it to a password manager before you turn E2EE on, not after.
 - Phase 2 (the MCP server) is going to need that same E2EE passphrase. Encryption at rest is for protecting the bytes on Cloudflare's path, not for hiding notes from Claude — that's the deliberate design.
+- Phase 3 (the vault-indexer) **also runs on the e2-micro** alongside CouchDB. 1 GB of RAM is enough but tight; CouchDB ~150 MB, cloudflared ~30 MB, the indexer with ONNX runtime 200–300 MB. Check `free -m` on the VM after deploying Phase 3 to confirm headroom. If memory pressure shows up, the upgrade path is `e2-small` (~$7/mo, no longer free). See [docs/vault-indexer/troubleshooting.md](docs/vault-indexer/troubleshooting.md) § Memory pressure.
 
 ## Prerequisites
 
@@ -41,6 +43,8 @@ Operational reference (state recovery, secrets, adding new projects, teardown) l
 ```
 personal-infra/
 ├── README.md                         You are here.
+├── package.json                      pnpm workspace root.
+├── pnpm-workspace.yaml               Workspace declaration (services/*).
 ├── .gitignore                        Excludes state, tfvars, env, credentials.
 ├── .editorconfig                     Baseline editor settings.
 ├── terraform/
@@ -49,14 +53,17 @@ personal-infra/
 │   ├── outputs.tf                    SSH command, IP, secret-fetch command.
 │   ├── obsidian.tf                   VM, service account, password secret.
 │   ├── obsidian-mcp.tf               Cloud Run MCP service, secrets, IAM, image repo, domain mapping.
+│   ├── vault-indexer.tf              Phase 3: secrets, IAM, AR repo, CF Access app + service token, DNS.
 │   ├── cloudflare.tf                 DNS records for vault.<domain> (proxied tunnel) and mcp.<domain> (DNS-only to Cloud Run).
 │   └── terraform.tfvars.example      Template (real .tfvars is gitignored).
 ├── services/
-│   └── obsidian-mcp/                 TypeScript Cloud Run service (Effect.ts + MCP SDK).
+│   ├── shared/                       Workspace package: CouchDB client, LiveSync codec, tagged errors, JSON logger.
+│   ├── obsidian-mcp/                 TypeScript Cloud Run service (Effect.ts + MCP SDK). Search is hybrid (BM25 + indexer).
+│   └── vault-indexer/                TypeScript on-VM service (Effect.ts + bge-small + sqlite-vec). Phase 3.
 ├── scripts/
 │   ├── bootstrap-state-bucket.sh     One-time: create the GCS state bucket.
 │   ├── obsidian/
-│   │   ├── cloud-init.yaml           Full VM bootstrap.
+│   │   ├── cloud-init.yaml           Full VM bootstrap. Phase 3 extends the compose stack.
 │   │   └── setup-tunnel.sh           Run-once on the VM: cloudflared setup.
 │   ├── obsidian-mcp/
 │   │   ├── create-couchdb-user.sh    Provisions the scoped MCP CouchDB user.
@@ -64,6 +71,11 @@ personal-infra/
 │   │   ├── remove-tunnel-hostname.sh One-time: removes the legacy mcp ingress rule from the VM.
 │   │   ├── deploy.sh                 Builds, pushes, and rolls a new Cloud Run revision.
 │   │   └── test-local.sh             Runs the server locally against the prod CouchDB.
+│   ├── vault-indexer/
+│   │   ├── deploy.sh                 Builds, pushes, and ships the indexer to the VM compose stack.
+│   │   ├── run-backfill.sh           One-shot backfill of vectors.db from CouchDB.
+│   │   ├── add-tunnel-route.sh       Adds indexer.<domain> ingress rule to cloudflared on the VM.
+│   │   └── evaluate.sh               Side-by-side embedding-model evaluation harness.
 │   └── lib/
 │       └── common.sh                 Shared bash helpers.
 └── docs/
@@ -73,15 +85,23 @@ personal-infra/
     │   ├── tunnel-setup.md           Manual cloudflared steps explained.
     │   ├── client-setup.md           LiveSync on Mac, iPad, iPhone.
     │   └── troubleshooting.md        Common failure modes.
-    └── obsidian-mcp/
-        ├── setup.md                  Phase 2 walkthrough end to end.
-        ├── architecture.md           Request flow, trust boundaries.
-        ├── auth.md                   Auth design and IdP migration recipe.
-        ├── oauth.md                  OAuth implementation reference.
-        ├── tools.md                  MCP tool reference.
-        ├── claude-connection.md      How to add the connector in Claude.
-        ├── styleguide.md             Code style for services/obsidian-mcp.
-        └── troubleshooting.md        Common Phase 2 failure modes.
+    ├── obsidian-mcp/
+    │   ├── setup.md                  Phase 2 walkthrough end to end.
+    │   ├── architecture.md           Request flow, trust boundaries.
+    │   ├── auth.md                   Auth design and IdP migration recipe.
+    │   ├── oauth.md                  OAuth implementation reference.
+    │   ├── tools.md                  MCP tool reference.
+    │   ├── claude-connection.md      How to add the connector in Claude.
+    │   ├── styleguide.md             Code style for both TS services (Phase 2 + Phase 3).
+    │   └── troubleshooting.md        Common Phase 2 failure modes.
+    └── vault-indexer/
+        ├── setup.md                  Phase 3 walkthrough end to end.
+        ├── architecture.md           Indexing + query paths, trust model for /search.
+        ├── embedding-model.md        Why bge-small, taintedness model, migration recipe.
+        ├── indexing-pipeline.md      _changes → debounce → chunk → embed → store.
+        ├── deployment.md             Image transport, compose dance, rollback.
+        ├── evaluation.md             Side-by-side model comparison harness.
+        └── troubleshooting.md        Common Phase 3 failure modes.
 ```
 
 When adding a new project: a new `terraform/<project>.tf`, a new `scripts/<project>/`, and a new `docs/<project>/`. The runbook has the checklist.

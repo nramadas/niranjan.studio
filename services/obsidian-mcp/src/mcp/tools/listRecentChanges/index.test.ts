@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { Vault, type VaultImpl } from "@niranjan/vault-shared/couchdb";
 import { Effect, Layer, ManagedRuntime } from "effect";
+import { describe, expect, it, vi } from "vitest";
 import { listRecentChanges } from "./index.ts";
-import { Vault, type VaultImpl } from "../../../couchdb/Vault";
 
 describe("listRecentChanges tool", () => {
   it("invokes Vault.listRecent with the supplied limit", async () => {
@@ -10,6 +10,7 @@ describe("listRecentChanges tool", () => {
       listNotes: () => Effect.succeed([]),
       listRecent: recentSpy as never,
       readNote: () => Effect.succeed({} as never),
+      readNoteById: () => Effect.fail(new Error("stub")) as never,
       readAllForIndex: () => Effect.succeed([]),
       createNote: () => Effect.succeed({} as never),
       updateNote: () => Effect.succeed({} as never),
@@ -29,6 +30,7 @@ describe("listRecentChanges tool", () => {
       listNotes: () => Effect.succeed([]),
       listRecent: recentSpy as never,
       readNote: () => Effect.succeed({} as never),
+      readNoteById: () => Effect.fail(new Error("stub")) as never,
       readAllForIndex: () => Effect.succeed([]),
       createNote: () => Effect.succeed({} as never),
       updateNote: () => Effect.succeed({} as never),

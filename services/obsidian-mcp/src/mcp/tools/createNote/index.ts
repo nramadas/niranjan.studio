@@ -1,6 +1,6 @@
+import { Vault } from "@niranjan/vault-shared/couchdb";
 import { Effect } from "effect";
 import { z } from "zod";
-import { Vault } from "../../../couchdb/Vault";
 import { runTool } from "../../runTool";
 import type { ServerRuntime } from "../../types.ts";
 
@@ -14,7 +14,7 @@ const inputShape = {
     .record(z.unknown())
     .optional()
     .describe(
-      "Optional YAML frontmatter as a flat key/value object. Renders to the standard `---\\nkey: value\\n---` block at the top of the note. Pass list-valued keys (like `tags`, `aliases`) as JSON arrays — `{\"tags\": [\"draft\", \"idea\"]}` becomes `tags: [draft, idea]` in YAML, which Obsidian parses as a real list. Strings, numbers, booleans, and null are written as YAML scalars; strings containing colons or other YAML-reserved characters are automatically quoted.",
+      'Optional YAML frontmatter as a flat key/value object. Renders to the standard `---\\nkey: value\\n---` block at the top of the note. Pass list-valued keys (like `tags`, `aliases`) as JSON arrays — `{"tags": ["draft", "idea"]}` becomes `tags: [draft, idea]` in YAML, which Obsidian parses as a real list. Strings, numbers, booleans, and null are written as YAML scalars; strings containing colons or other YAML-reserved characters are automatically quoted.',
     ),
 } as const;
 
@@ -28,7 +28,10 @@ const config = {
 const handler =
   (runtime: ServerRuntime) =>
   async (args: { path: string; body: string; frontmatter?: Record<string, unknown> }) =>
-    runTool(runtime, "create_note")(
+    runTool(
+      runtime,
+      "create_note",
+    )(
       Effect.gen(function* () {
         const vault = yield* Vault;
         return yield* vault.createNote(args.path, args.body, args.frontmatter);

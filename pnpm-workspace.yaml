@@ -1,0 +1,8 @@
+# pnpm workspace declaration. Every package under `services/` is a workspace
+# member. The shared vault library (`services/shared`) is consumed by both
+# `services/obsidian-mcp` and `services/vault-indexer` via a `workspace:*`
+# protocol dependency — pnpm resolves it to the local on-disk copy rather
+# than the registry.
+
+packages:
+  - "services/*"

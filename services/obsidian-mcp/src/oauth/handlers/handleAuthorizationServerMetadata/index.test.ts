@@ -1,12 +1,10 @@
-import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
+import { describe, expect, it } from "vitest";
 import { handleAuthorizationServerMetadata } from "./index.ts";
 
 describe("handleAuthorizationServerMetadata", () => {
   it("returns RFC 8414 metadata derived from the issuer", async () => {
-    const out = await Effect.runPromise(
-      handleAuthorizationServerMetadata("https://mcp.example"),
-    );
+    const out = await Effect.runPromise(handleAuthorizationServerMetadata("https://mcp.example"));
     expect(out.kind).toBe("json");
     if (out.kind === "json") {
       const body = out.body as Record<string, unknown>;

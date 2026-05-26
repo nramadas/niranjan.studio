@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { exportPKCS8, generateKeyPair } from "jose";
 import { Effect, Exit, Redacted } from "effect";
-import { handleAuthorize } from "./index.ts";
+import { exportPKCS8, generateKeyPair } from "jose";
+import { describe, expect, it } from "vitest";
 import { SigningKeyLayer } from "../../SigningKeyLayer";
+import { handleAuthorize } from "./index.ts";
 
 const mkLayer = async () => {
   const { privateKey } = await generateKeyPair("RS256", { modulusLength: 2048, extractable: true });
@@ -36,7 +36,9 @@ const goodQuery = {
 describe("handleAuthorize", () => {
   it("redirects to Google with our state JWT", async () => {
     const layer = await mkLayer();
-    const out = await Effect.runPromise(handleAuthorize(goodQuery, deps).pipe(Effect.provide(layer)));
+    const out = await Effect.runPromise(
+      handleAuthorize(goodQuery, deps).pipe(Effect.provide(layer)),
+    );
     expect(out.kind).toBe("redirect");
     if (out.kind === "redirect") {
       const url = new URL(out.location);

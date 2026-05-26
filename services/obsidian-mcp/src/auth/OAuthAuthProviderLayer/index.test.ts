@@ -1,13 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { exportPKCS8, generateKeyPair } from "jose";
 import { Effect, Exit, Layer, Redacted } from "effect";
-import { OAuthAuthProviderLayer } from "./index.ts";
-import { AuthProvider } from "../AuthProvider";
-import type { AuthRequest } from "../types.ts";
-import { encodeAccessToken } from "../../oauth/encodeAccessToken";
-import { encodeRefreshToken } from "../../oauth/encodeRefreshToken";
+import { exportPKCS8, generateKeyPair } from "jose";
+import { describe, expect, it } from "vitest";
 import { SigningKey } from "../../oauth/SigningKey";
 import { SigningKeyLayer } from "../../oauth/SigningKeyLayer";
+import { encodeAccessToken } from "../../oauth/encodeAccessToken";
+import { encodeRefreshToken } from "../../oauth/encodeRefreshToken";
+import { AuthProvider } from "../AuthProvider";
+import type { AuthRequest } from "../types.ts";
+import { OAuthAuthProviderLayer } from "./index.ts";
 
 const ISS = "https://mcp.test";
 

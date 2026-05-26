@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Effect, Exit, Redacted } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { exchangeAuthCode } from "./index.ts";
 
 const params = {
@@ -20,11 +20,12 @@ describe("exchangeAuthCode", () => {
   });
 
   it("POSTs the auth-code grant and returns the id_token", async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ id_token: "header.payload.sig" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ id_token: "header.payload.sig" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
     );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     const out = await Effect.runPromise(exchangeAuthCode(params));

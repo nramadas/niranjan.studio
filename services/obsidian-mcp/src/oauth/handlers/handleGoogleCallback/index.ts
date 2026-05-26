@@ -1,10 +1,10 @@
+import { OAuthError } from "@niranjan/vault-shared/lib/errors";
 import { Effect, type Redacted } from "effect";
-import { OAuthError } from "../../../lib/errors/OAuthError";
+import { SigningKey } from "../../SigningKey";
 import { decodeGoogleState } from "../../decodeGoogleState";
 import { encodeAuthorizationCode } from "../../encodeAuthorizationCode";
 import { exchangeAuthCode } from "../../googleOidc/exchangeAuthCode";
 import { verifyIdToken } from "../../googleOidc/verifyIdToken";
-import { SigningKey } from "../../SigningKey";
 import type { HandlerResponse } from "../../types.ts";
 
 interface CallbackQuery {

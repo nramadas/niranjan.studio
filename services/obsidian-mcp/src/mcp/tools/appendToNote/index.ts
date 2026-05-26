@@ -1,6 +1,6 @@
+import { Vault } from "@niranjan/vault-shared/couchdb";
 import { Effect } from "effect";
 import { z } from "zod";
-import { Vault } from "../../../couchdb/Vault";
 import { runTool } from "../../runTool";
 import type { ServerRuntime } from "../../types.ts";
 
@@ -21,15 +21,16 @@ const config = {
   inputSchema: inputShape,
 };
 
-const handler =
-  (runtime: ServerRuntime) =>
-  async (args: { path: string; content: string }) =>
-    runTool(runtime, "append_to_note")(
-      Effect.gen(function* () {
-        const vault = yield* Vault;
-        return yield* vault.appendToNote(args.path, args.content);
-      }),
-    );
+const handler = (runtime: ServerRuntime) => async (args: { path: string; content: string }) =>
+  runTool(
+    runtime,
+    "append_to_note",
+  )(
+    Effect.gen(function* () {
+      const vault = yield* Vault;
+      return yield* vault.appendToNote(args.path, args.content);
+    }),
+  );
 
 /**
  * The `append_to_note` MCP tool registration. Returns the tool name, the

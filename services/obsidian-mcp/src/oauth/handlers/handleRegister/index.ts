@@ -1,5 +1,5 @@
+import { OAuthError } from "@niranjan/vault-shared/lib/errors";
 import { Effect } from "effect";
-import { OAuthError } from "../../../lib/errors/OAuthError";
 import { deterministicClientId } from "../../deterministicClientId";
 import type { ClientRegistrationResponse, HandlerResponse } from "../../types.ts";
 
@@ -24,9 +24,7 @@ interface RegisterRequest {
  * @returns    A JSON HandlerResponse with the registration document, or
  *             an OAuthError if the metadata is malformed.
  */
-export const handleRegister = (
-  body: RegisterRequest,
-): Effect.Effect<HandlerResponse, OAuthError> =>
+export const handleRegister = (body: RegisterRequest): Effect.Effect<HandlerResponse, OAuthError> =>
   Effect.gen(function* () {
     const redirectUris = body.redirect_uris;
     if (!Array.isArray(redirectUris) || redirectUris.length === 0) {

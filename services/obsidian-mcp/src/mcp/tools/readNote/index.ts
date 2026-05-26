@@ -1,14 +1,11 @@
+import { Vault } from "@niranjan/vault-shared/couchdb";
 import { Effect } from "effect";
 import { z } from "zod";
-import { Vault } from "../../../couchdb/Vault";
 import { runTool } from "../../runTool";
 import type { ServerRuntime } from "../../types.ts";
 
 const inputShape = {
-  path: z
-    .string()
-    .min(1)
-    .describe("Vault-relative path of the note (e.g. `Daily/2026-05-02.md`)."),
+  path: z.string().min(1).describe("Vault-relative path of the note (e.g. `Daily/2026-05-02.md`)."),
 } as const;
 
 const config = {
@@ -19,7 +16,10 @@ const config = {
 };
 
 const handler = (runtime: ServerRuntime) => async (args: { path: string }) =>
-  runTool(runtime, "read_note")(
+  runTool(
+    runtime,
+    "read_note",
+  )(
     Effect.gen(function* () {
       const vault = yield* Vault;
       return yield* vault.readNote(args.path);

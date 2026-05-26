@@ -12,9 +12,7 @@ describe("buildAuthUrl", () => {
     );
     expect(url.origin + url.pathname).toBe("https://accounts.google.com/o/oauth2/v2/auth");
     expect(url.searchParams.get("client_id")).toBe("1234.apps.googleusercontent.com");
-    expect(url.searchParams.get("redirect_uri")).toBe(
-      "https://mcp.example/oauth/google/callback",
-    );
+    expect(url.searchParams.get("redirect_uri")).toBe("https://mcp.example/oauth/google/callback");
     expect(url.searchParams.get("response_type")).toBe("code");
     expect(url.searchParams.get("scope")).toBe("openid email");
     expect(url.searchParams.get("state")).toBe("opaque-state");

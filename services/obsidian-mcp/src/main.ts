@@ -20,13 +20,19 @@
 // The HTTP layer is intentionally thin (raw node:http). Effect drives
 // everything inside the request lifecycle.
 
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { Cause, Effect, Exit, Layer, Logger, LogLevel, ManagedRuntime } from "effect";
+import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { Cause, Effect, Exit, Layer, LogLevel, Logger, ManagedRuntime } from "effect";
 
+import {
+  CouchClient,
+  CouchClientLayer,
+  VaultLayer,
+  subscribeChanges,
+} from "@niranjan/vault-shared/couchdb";
+import { cloudRunLogger } from "@niranjan/vault-shared/lib";
+import { AuthProvider, OAuthAuthProviderLayer, types as authTypes } from "./auth";
 import { allConfig } from "./config";
-import { CouchClient, CouchClientLayer, VaultLayer, subscribeChanges } from "./couchdb";
-import { cloudRunLogger } from "./lib";
 import { buildMcpServer } from "./mcp";
 import {
   SigningKey,
@@ -34,8 +40,7 @@ import {
   handlers as oauthHandlers,
   types as oauthTypes,
 } from "./oauth";
-import { AuthProvider, OAuthAuthProviderLayer, types as authTypes } from "./auth";
-import { SearchIndex, SearchIndexLayer } from "./search";
+import { IndexerClientLayer, SearchIndex, SearchIndexLayer } from "./search";
 
 type AuthRequest = authTypes.AuthRequest;
 type HandlerResponse = oauthTypes.HandlerResponse;
@@ -52,10 +57,7 @@ const toAuthRequest = (req: IncomingMessage): AuthRequest => ({
 const setCors = (res: ServerResponse) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE");
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, Mcp-Session-Id",
-  );
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Mcp-Session-Id");
 };
 
 const sendJson = (res: ServerResponse, status: number, body: unknown) => {
@@ -159,13 +161,27 @@ const main = Effect.gen(function* () {
   const searchLayer = SearchIndexLayer(cfg.search.rebuildDebounceMs).pipe(
     Layer.provide(vaultLayer),
   );
+  const indexerLayer = IndexerClientLayer({
+    url: cfg.indexer.url,
+    bearer: cfg.indexer.bearer,
+    cfAccessClientId: cfg.indexer.cfAccessClientId,
+    cfAccessClientSecret: cfg.indexer.cfAccessClientSecret,
+    timeoutMs: cfg.indexer.timeoutMs,
+  });
   const signingLayer = SigningKeyLayer(cfg.oauth);
   const authLayer = OAuthAuthProviderLayer({
     issuer: cfg.oauth.issuer,
     audience: cfg.oauth.issuer,
   }).pipe(Layer.provide(signingLayer));
 
-  const appLayer = Layer.mergeAll(couchLayer, vaultLayer, searchLayer, signingLayer, authLayer);
+  const appLayer = Layer.mergeAll(
+    couchLayer,
+    vaultLayer,
+    searchLayer,
+    indexerLayer,
+    signingLayer,
+    authLayer,
+  );
   const runtime = ManagedRuntime.make(appLayer);
   const innerRuntime = yield* Effect.promise(() => runtime.runtime());
 
@@ -177,11 +193,13 @@ const main = Effect.gen(function* () {
     // unobserved failure is a silent-error hazard, so route any future
     // failure through Cloud Logging.
     Effect.runFork(
-      search.markDirty().pipe(
-        Effect.catchAllCause((cause) =>
-          Effect.logError(`search.markDirty failed: ${Cause.pretty(cause)}`),
+      search
+        .markDirty()
+        .pipe(
+          Effect.catchAllCause((cause) =>
+            Effect.logError(`search.markDirty failed: ${Cause.pretty(cause)}`),
+          ),
         ),
-      ),
     );
   });
 
@@ -275,7 +293,10 @@ const main = Effect.gen(function* () {
     }
 
     if (path === "/.well-known/jwks.json" && method === "GET") {
-      void runHandler(res, oauthHandlers.handleJwks() as Effect.Effect<HandlerResponse, never, never>);
+      void runHandler(
+        res,
+        oauthHandlers.handleJwks() as Effect.Effect<HandlerResponse, never, never>,
+      );
       return;
     }
 
@@ -336,85 +357,88 @@ const main = Effect.gen(function* () {
         const provider = yield* AuthProvider;
         return yield* provider.validateRequest(authReq);
       });
-      runtime.runPromiseExit(program).then(async (exit) => {
-        if (Exit.isSuccess(exit)) {
-          const identity = exit.value;
-          // Stuff identity onto the request for tools that want it (none yet,
-          // but matches MCP SDK's `auth` shape).
-          (
-            req as IncomingMessage & {
-              auth?: { token: string; clientId: string; scopes: string[]; extra: unknown };
-            }
-          ).auth = {
-            token: "",
-            clientId: identity.email,
-            scopes: [],
-            extra: { source: identity.source, ...(identity.extra ?? {}) },
-          };
-          setCors(res);
-          const { server, transport } = buildPerRequestMcp();
-          // Tear down the per-request server + transport when the response
-          // closes, so we don't leak Server instances / event listeners.
-          res.on("close", () => {
-            void transport.close().catch((err) => {
-              console.error(`transport.close failed: ${formatErr(err)}`);
-            });
-            void server.close().catch((err) => {
-              console.error(`mcpServer.close failed: ${formatErr(err)}`);
-            });
-          });
-          try {
-            await server.connect(transport);
-            await transport.handleRequest(req, res);
-          } catch (err) {
-            console.error(`transport error: ${formatErr(err)}`);
-            if (!res.headersSent) {
-              sendJson(res, 500, {
-                error: "server_error",
-                error_description: formatErr(err),
+      runtime
+        .runPromiseExit(program)
+        .then(async (exit) => {
+          if (Exit.isSuccess(exit)) {
+            const identity = exit.value;
+            // Stuff identity onto the request for tools that want it (none yet,
+            // but matches MCP SDK's `auth` shape).
+            (
+              req as IncomingMessage & {
+                auth?: { token: string; clientId: string; scopes: string[]; extra: unknown };
+              }
+            ).auth = {
+              token: "",
+              clientId: identity.email,
+              scopes: [],
+              extra: { source: identity.source, ...(identity.extra ?? {}) },
+            };
+            setCors(res);
+            const { server, transport } = buildPerRequestMcp();
+            // Tear down the per-request server + transport when the response
+            // closes, so we don't leak Server instances / event listeners.
+            res.on("close", () => {
+              void transport.close().catch((err) => {
+                console.error(`transport.close failed: ${formatErr(err)}`);
               });
+              void server.close().catch((err) => {
+                console.error(`mcpServer.close failed: ${formatErr(err)}`);
+              });
+            });
+            try {
+              await server.connect(transport);
+              await transport.handleRequest(req, res);
+            } catch (err) {
+              console.error(`transport error: ${formatErr(err)}`);
+              if (!res.headersSent) {
+                sendJson(res, 500, {
+                  error: "server_error",
+                  error_description: formatErr(err),
+                });
+              }
             }
-          }
-          return;
-        }
-
-        const failureOpt = Cause.failureOption(exit.cause);
-        if (failureOpt._tag === "Some") {
-          const inner = failureOpt.value;
-          if (
-            inner &&
-            typeof inner === "object" &&
-            "_tag" in inner &&
-            (inner as { _tag: unknown })._tag === "AuthError"
-          ) {
-            const ae = inner as { reason: string; statusCode: 401 | 403 };
-            console.warn(`AuthError ${ae.statusCode}: ${ae.reason}`);
-            // Per the MCP authorization spec, a 401 on /mcp must include
-            // a WWW-Authenticate header pointing at our protected-resource
-            // metadata so the client can discover the auth server.
-            if (ae.statusCode === 401) {
-              res.setHeader(
-                "WWW-Authenticate",
-                `Bearer resource_metadata="${cfg.oauth.issuer}/.well-known/oauth-protected-resource"`,
-              );
-            }
-            sendJson(res, ae.statusCode, { error: "unauthorized", error_description: ae.reason });
             return;
           }
-        }
-        const pretty = Cause.pretty(exit.cause);
-        console.error(`request failed: ${pretty}`);
-        sendJson(res, 500, { error: "server_error", error_description: pretty });
-      }).catch((err) => {
-        // Anything thrown inside the .then callback (e.g. a bug in
-        // response shaping or a setHeader-after-sent) lands here. Log
-        // it; otherwise it becomes an unhandled rejection that Cloud
-        // Run merely terminates the process for.
-        console.error(`mcp handler crashed: ${formatErr(err)}`);
-        if (!res.headersSent) {
-          sendJson(res, 500, { error: "server_error", error_description: String(err) });
-        }
-      });
+
+          const failureOpt = Cause.failureOption(exit.cause);
+          if (failureOpt._tag === "Some") {
+            const inner = failureOpt.value;
+            if (
+              inner &&
+              typeof inner === "object" &&
+              "_tag" in inner &&
+              (inner as { _tag: unknown })._tag === "AuthError"
+            ) {
+              const ae = inner as { reason: string; statusCode: 401 | 403 };
+              console.warn(`AuthError ${ae.statusCode}: ${ae.reason}`);
+              // Per the MCP authorization spec, a 401 on /mcp must include
+              // a WWW-Authenticate header pointing at our protected-resource
+              // metadata so the client can discover the auth server.
+              if (ae.statusCode === 401) {
+                res.setHeader(
+                  "WWW-Authenticate",
+                  `Bearer resource_metadata="${cfg.oauth.issuer}/.well-known/oauth-protected-resource"`,
+                );
+              }
+              sendJson(res, ae.statusCode, { error: "unauthorized", error_description: ae.reason });
+              return;
+            }
+          }
+          const pretty = Cause.pretty(exit.cause);
+          console.error(`request failed: ${pretty}`);
+          sendJson(res, 500, { error: "server_error", error_description: pretty });
+        })
+        .catch((err) => {
+          // Anything thrown inside the .then callback (e.g. a bug in
+          // response shaping or a setHeader-after-sent) lands here. Log
+          // it; otherwise it becomes an unhandled rejection that Cloud
+          // Run merely terminates the process for.
+          console.error(`mcp handler crashed: ${formatErr(err)}`);
+          if (!res.headersSent) {
+            sendJson(res, 500, { error: "server_error", error_description: String(err) });
+          }
+        });
       return;
     }
 

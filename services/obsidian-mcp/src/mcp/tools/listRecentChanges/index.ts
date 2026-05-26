@@ -1,6 +1,6 @@
+import { Vault } from "@niranjan/vault-shared/couchdb";
 import { Effect } from "effect";
 import { z } from "zod";
-import { Vault } from "../../../couchdb/Vault";
 import { runTool } from "../../runTool";
 import type { ServerRuntime } from "../../types.ts";
 
@@ -22,7 +22,10 @@ const config = {
 };
 
 const handler = (runtime: ServerRuntime) => async (args: { limit?: number }) =>
-  runTool(runtime, "list_recent_changes")(
+  runTool(
+    runtime,
+    "list_recent_changes",
+  )(
     Effect.gen(function* () {
       const vault = yield* Vault;
       return yield* vault.listRecent(args.limit ?? 20);

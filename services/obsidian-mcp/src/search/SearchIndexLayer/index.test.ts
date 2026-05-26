@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { Vault, type VaultImpl } from "@niranjan/vault-shared/couchdb";
+import type { NoteRead } from "@niranjan/vault-shared/couchdb/types";
 import { Effect, Layer } from "effect";
-import { SearchIndexLayer } from "./index.ts";
+import { describe, expect, it } from "vitest";
 import { SearchIndex } from "../SearchIndex";
-import { Vault, type VaultImpl } from "../../couchdb/Vault";
-import type { NoteRead } from "../../couchdb/types.ts";
+import { SearchIndexLayer } from "./index.ts";
 
 const stubVault = (notes: NoteRead[]): VaultImpl => ({
   listNotes: () => Effect.succeed([]),
@@ -18,11 +18,12 @@ const stubVault = (notes: NoteRead[]): VaultImpl => ({
       ctime: 0,
       size: 0,
     }),
+  readNoteById: () => Effect.fail(new Error("stub")) as never,
   readAllForIndex: () => Effect.succeed(notes),
   createNote: () => Effect.succeed({} as never),
   updateNote: () => Effect.succeed({} as never),
   appendToNote: () => Effect.succeed({} as never),
-      editNote: () => Effect.succeed({} as never),
+  editNote: () => Effect.succeed({} as never),
   deleteNote: () => Effect.void,
 });
 
@@ -44,7 +45,9 @@ describe("SearchIndexLayer", () => {
       mkNote("orange.md", "this is the canonical note about orange"),
       mkNote("unrelated.md", "different topic entirely"),
     ];
-    const layer = SearchIndexLayer(5000).pipe(Layer.provide(Layer.succeed(Vault, stubVault(notes))));
+    const layer = SearchIndexLayer(5000).pipe(
+      Layer.provide(Layer.succeed(Vault, stubVault(notes))),
+    );
     const hits = await Effect.runPromise(
       Effect.gen(function* () {
         const idx = yield* SearchIndex;
@@ -59,7 +62,9 @@ describe("SearchIndexLayer", () => {
 
   it("returns empty array when no documents match", async () => {
     const notes = [mkNote("x.md", "the only note in the vault")];
-    const layer = SearchIndexLayer(5000).pipe(Layer.provide(Layer.succeed(Vault, stubVault(notes))));
+    const layer = SearchIndexLayer(5000).pipe(
+      Layer.provide(Layer.succeed(Vault, stubVault(notes))),
+    );
     const hits = await Effect.runPromise(
       Effect.gen(function* () {
         const idx = yield* SearchIndex;

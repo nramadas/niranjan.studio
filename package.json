@@ -1,0 +1,16 @@
+{
+  "name": "niranjan-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Workspace root for personal-infra. Hosts the Cloud Run obsidian-mcp service, the on-VM vault-indexer service, and the shared vault library both depend on.",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter './services/*' build",
+    "typecheck": "pnpm -r --filter './services/*' typecheck",
+    "lint": "pnpm -r --filter './services/*' lint",
+    "test": "pnpm -r --filter './services/*' test"
+  }
+}

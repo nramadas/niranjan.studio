@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { exportPKCS8, generateKeyPair, decodeJwt } from "jose";
 import { Effect, Redacted } from "effect";
-import { encodeGoogleState } from "./index.ts";
+import { decodeJwt, exportPKCS8, generateKeyPair } from "jose";
+import { describe, expect, it } from "vitest";
 import { SigningKeyLayer } from "../SigningKeyLayer";
+import { encodeGoogleState } from "./index.ts";
 
 describe("encodeGoogleState", () => {
   it("signs a JWT carrying the resumption payload + google_state type", async () => {

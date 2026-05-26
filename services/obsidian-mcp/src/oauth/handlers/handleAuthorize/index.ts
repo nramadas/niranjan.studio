@@ -1,8 +1,8 @@
+import { OAuthError } from "@niranjan/vault-shared/lib/errors";
 import { Effect, type Redacted } from "effect";
-import { OAuthError } from "../../../lib/errors/OAuthError";
+import { SigningKey } from "../../SigningKey";
 import { encodeGoogleState } from "../../encodeGoogleState";
 import { buildAuthUrl } from "../../googleOidc/buildAuthUrl";
-import { SigningKey } from "../../SigningKey";
 import type { HandlerResponse } from "../../types.ts";
 
 interface AuthorizeQuery {

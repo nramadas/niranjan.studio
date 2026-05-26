@@ -1,5 +1,6 @@
+import { Vault, type VaultImpl } from "@niranjan/vault-shared/couchdb";
+import { isIndexablePath } from "@niranjan/vault-shared/lib/isIndexablePath";
 import { Effect, Layer, Ref } from "effect";
-import { Vault, type VaultImpl } from "../../couchdb/Vault";
 import { SearchIndex } from "../SearchIndex";
 import type { SearchHit, SearchIndexImpl } from "../types.ts";
 
@@ -150,14 +151,27 @@ const buildImpl = (vault: VaultImpl, debounceMs: number): Effect.Effect<SearchIn
 
     const rebuild = Effect.gen(function* () {
       yield* Ref.update(ref, (s) => ({ ...s, building: true, dirty: false }));
-      const notes = yield* vault.readAllForIndex().pipe(
-        Effect.catchAll((err) =>
-          Effect.logError(`search index build failed: ${String(err)}`).pipe(Effect.as([] as never)),
-        ),
-      );
+      const allNotes = yield* vault
+        .readAllForIndex()
+        .pipe(
+          Effect.catchAll((err) =>
+            Effect.logError(`search index build failed: ${String(err)}`).pipe(
+              Effect.as([] as never),
+            ),
+          ),
+        );
+      // Exclude .trash/ and any other unindexable prefixes (see
+      // @niranjan/vault-shared/lib/isIndexablePath). The vault-indexer
+      // applies the same filter to its semantic index; without doing it
+      // here too, lexical search would surface trashed duplicates that
+      // semantic search has excluded — and the hybrid (RRF-fused) path
+      // would still include them at a mid rank, defeating the exclusion.
+      const notes = allNotes.filter((n) => isIndexablePath(n.path));
       const next = build(notes);
       yield* Ref.update(ref, (s) => ({ ...s, index: next, building: false }));
-      yield* Effect.logInfo(`search index built: ${next.docs.length} notes`);
+      yield* Effect.logInfo(
+        `search index built: ${next.docs.length} notes (${allNotes.length - notes.length} excluded by prefix)`,
+      );
     });
 
     const ensureBuilt: Effect.Effect<void> = Effect.gen(function* () {

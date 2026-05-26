@@ -1,6 +1,6 @@
+import { Vault } from "@niranjan/vault-shared/couchdb";
 import { Effect } from "effect";
 import { z } from "zod";
-import { Vault } from "../../../couchdb/Vault";
 import { runTool } from "../../runTool";
 import type { ServerRuntime } from "../../types.ts";
 
@@ -40,7 +40,10 @@ const handler =
     new_string: string;
     replace_all?: boolean;
   }) =>
-    runTool(runtime, "edit_note")(
+    runTool(
+      runtime,
+      "edit_note",
+    )(
       Effect.gen(function* () {
         const vault = yield* Vault;
         return yield* vault.editNote(

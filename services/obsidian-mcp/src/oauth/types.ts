@@ -106,5 +106,10 @@ export interface ClientRegistrationResponse {
  * the given status, `redirect` writes a Location header and a 302/303.
  */
 export type HandlerResponse =
-  | { readonly kind: "json"; readonly status: number; readonly body: unknown; readonly headers?: Readonly<Record<string, string>> }
+  | {
+      readonly kind: "json";
+      readonly status: number;
+      readonly body: unknown;
+      readonly headers?: Readonly<Record<string, string>>;
+    }
   | { readonly kind: "redirect"; readonly status: 302 | 303; readonly location: string };

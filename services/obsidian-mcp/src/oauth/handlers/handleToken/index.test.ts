@@ -1,11 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import { exportPKCS8, generateKeyPair } from "jose";
 import { Effect, Exit, Redacted } from "effect";
-import { handleToken } from "./index.ts";
+import { exportPKCS8, generateKeyPair } from "jose";
+import { describe, expect, it } from "vitest";
+import { SigningKeyLayer } from "../../SigningKeyLayer";
 import { encodeAuthorizationCode } from "../../encodeAuthorizationCode";
 import { encodeRefreshToken } from "../../encodeRefreshToken";
-import { SigningKeyLayer } from "../../SigningKeyLayer";
+import { handleToken } from "./index.ts";
 
 const ISS = "https://mcp.test";
 
@@ -99,7 +99,8 @@ describe("handleToken", () => {
       }).pipe(Effect.provide(layer)),
     );
     expect(Exit.isFailure(exit)).toBe(true);
-    if (Exit.isFailure(exit)) expect(JSON.stringify(exit.cause)).toContain("PKCE verification failed");
+    if (Exit.isFailure(exit))
+      expect(JSON.stringify(exit.cause)).toContain("PKCE verification failed");
   });
 
   it("exchanges a valid refresh token for a fresh access+refresh pair", async () => {
@@ -124,7 +125,8 @@ describe("handleToken", () => {
       handleToken({ grant_type: "password" }, deps).pipe(Effect.provide(layer)),
     );
     expect(Exit.isFailure(exit)).toBe(true);
-    if (Exit.isFailure(exit)) expect(JSON.stringify(exit.cause)).toContain("unsupported grant_type");
+    if (Exit.isFailure(exit))
+      expect(JSON.stringify(exit.cause)).toContain("unsupported grant_type");
   });
 
   it("rejects auth_code grant when code is missing", async () => {

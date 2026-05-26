@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { exportPKCS8, generateKeyPair } from "jose";
 import { Effect, Exit, Redacted } from "effect";
-import { decodeAuthorizationCode } from "./index.ts";
-import { encodeAuthorizationCode } from "../encodeAuthorizationCode";
-import { encodeAccessToken } from "../encodeAccessToken";
+import { exportPKCS8, generateKeyPair } from "jose";
+import { describe, expect, it } from "vitest";
 import { SigningKeyLayer } from "../SigningKeyLayer";
+import { encodeAccessToken } from "../encodeAccessToken";
+import { encodeAuthorizationCode } from "../encodeAuthorizationCode";
+import { decodeAuthorizationCode } from "./index.ts";
 
 const mkLayer = async () => {
   const { privateKey } = await generateKeyPair("RS256", { modulusLength: 2048, extractable: true });

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { Effect, Exit } from "effect";
+import { describe, expect, it } from "vitest";
 import { verifyIdToken } from "./index.ts";
 
 describe("verifyIdToken", () => {

@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { Vault, type VaultImpl } from "@niranjan/vault-shared/couchdb";
 import { Effect, Layer, ManagedRuntime } from "effect";
+import { describe, expect, it } from "vitest";
 import { listNotes } from "./index.ts";
-import { Vault, type VaultImpl } from "../../../couchdb/Vault";
 
 const stubVault: VaultImpl = {
   listNotes: (folderPrefix, limit) =>
@@ -15,11 +15,12 @@ const stubVault: VaultImpl = {
     ),
   listRecent: () => Effect.succeed([]),
   readNote: () => Effect.succeed({} as never),
+  readNoteById: () => Effect.fail(new Error("stub")) as never,
   readAllForIndex: () => Effect.succeed([]),
   createNote: () => Effect.succeed({} as never),
   updateNote: () => Effect.succeed({} as never),
   appendToNote: () => Effect.succeed({} as never),
-      editNote: () => Effect.succeed({} as never),
+  editNote: () => Effect.succeed({} as never),
   deleteNote: () => Effect.void,
 };
 

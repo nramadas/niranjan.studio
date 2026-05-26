@@ -1,13 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { Vault, type VaultImpl } from "@niranjan/vault-shared/couchdb";
+import { NoteConflictError } from "@niranjan/vault-shared/lib/errors";
 import { Effect, Layer, ManagedRuntime } from "effect";
+import { describe, expect, it } from "vitest";
 import { createNote } from "./index.ts";
-import { Vault, type VaultImpl } from "../../../couchdb/Vault";
-import { NoteConflictError } from "../../../lib/errors/NoteConflictError";
 
 const stubVault: VaultImpl = {
   listNotes: () => Effect.succeed([]),
   listRecent: () => Effect.succeed([]),
   readNote: () => Effect.succeed({} as never),
+  readNoteById: () => Effect.fail(new Error("stub")) as never,
   readAllForIndex: () => Effect.succeed([]),
   createNote: (path, body) =>
     path.startsWith("Existing")
@@ -23,7 +24,7 @@ const stubVault: VaultImpl = {
         }),
   updateNote: () => Effect.succeed({} as never),
   appendToNote: () => Effect.succeed({} as never),
-      editNote: () => Effect.succeed({} as never),
+  editNote: () => Effect.succeed({} as never),
   deleteNote: () => Effect.void,
 };
 

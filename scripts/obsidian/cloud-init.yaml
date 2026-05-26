@@ -50,6 +50,15 @@ write_files:
             - /opt/obsidian/data:/opt/couchdb/data
             - /opt/obsidian/etc:/opt/couchdb/etc/local.d
 
+        # The vault-indexer service is NOT defined here. It is owned
+        # end-to-end by scripts/vault-indexer/deploy.sh, which writes
+        # /opt/obsidian/docker-compose.indexer.yml as a compose override
+        # at deploy time and brings the service up with `-f docker-compose.yml
+        # -f docker-compose.indexer.yml`. Keeping the definition out of
+        # cloud-init means a redeploy works on any VM regardless of when
+        # it was bootstrapped — deploy.sh recovers state rather than
+        # depending on cloud-init drift.
+
   - path: /opt/obsidian/init-couchdb.sh
     permissions: '0755'
     content: |

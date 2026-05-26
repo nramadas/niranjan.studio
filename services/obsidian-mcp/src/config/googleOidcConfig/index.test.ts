@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { ConfigProvider, Effect, Redacted } from "effect";
+import { describe, expect, it } from "vitest";
 import { googleOidcConfig } from "./index.ts";
 
 describe("googleOidcConfig", () => {

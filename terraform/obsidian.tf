@@ -38,13 +38,15 @@ resource "google_secret_manager_secret_version" "obsidian_couchdb_password" {
 
 # ─── VM service account ─────────────────────────────────────────────────────
 #
-# Dedicated SA with no project-wide roles. The single grant below scopes its
-# Secret Manager access to one secret, not the whole project.
+# Dedicated SA. Grants are deliberately scoped — each secret is bound
+# individually (no project-wide Secret Manager role). The one project-level
+# role we DO grant is `roles/logging.logWriter`, because the on-VM Ops
+# Agent ships system logs to Cloud Logging on a per-project resource.
 
 resource "google_service_account" "obsidian_vm" {
   account_id   = "obsidian-vm"
   display_name = "Obsidian sync VM"
-  description  = "Service account attached to the Obsidian CouchDB VM. Reads only the CouchDB password secret."
+  description  = "Service account attached to the Obsidian CouchDB VM. Scoped accessors on specific secrets; project-level logWriter so the Ops Agent can ship system logs."
 }
 
 resource "google_secret_manager_secret_iam_member" "obsidian_couchdb_password_accessor" {
@@ -53,22 +55,43 @@ resource "google_secret_manager_secret_iam_member" "obsidian_couchdb_password_ac
   member    = "serviceAccount:${google_service_account.obsidian_vm.email}"
 }
 
+# The on-VM Ops Agent (otelopscol) ships system logs to Cloud Logging.
+# Without this grant, every batch fails with PERMISSION_DENIED and the
+# agent retries forever — each rejected batch generates a large stack-
+# trace log entry that *also* fails to ship, a self-amplifying loop that
+# drains the e2-micro's CPU credit budget and eventually makes the VM
+# unresponsive (sshd queues up, deploys time out). Granting logWriter
+# breaks the loop at its source.
+resource "google_project_iam_member" "obsidian_vm_log_writer" {
+  project = var.gcp_project_id
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${google_service_account.obsidian_vm.email}"
+}
+
 # ─── VM ─────────────────────────────────────────────────────────────────────
 #
-# Critical for free tier:
-#   - machine_type = "e2-micro"
+# Sized at e2-small (2 vCPU burst, 2 GB RAM, ~$10-13/mo with sustained-use
+# discount). Upgraded from e2-micro after the free-tier 1 GB became too
+# tight: CouchDB + cloudflared + the vault-indexer (with bge-small loaded
+# in RAM) routinely pushed the VM into swap, which made SSH glacial and
+# deploys unreliable. The cost premium buys deterministic deploy times
+# and headroom for the indexer to also run backfills concurrently.
+#
+# Other knobs are still chosen for cost minimisation:
 #   - boot_disk type = "pd-standard"  (NOT pd-balanced or pd-ssd)
 #   - network_tier  = "STANDARD"      (NOT PREMIUM)
 #   - region        = us-east1, us-west1, or us-central1 (validated above)
 #
 # `allow_stopping_for_update = true` so Terraform can change instance
 # attributes (machine type, metadata) without erroring on a running VM.
+# This is how the e2-micro -> e2-small migration ran without recreating
+# the boot disk (and therefore without losing the CouchDB data on it).
 #
 # No firewall rules: Cloudflare Tunnel is outbound-only.
 
 resource "google_compute_instance" "obsidian" {
   name         = var.instance_name
-  machine_type = "e2-micro"
+  machine_type = "e2-small"
   zone         = var.gcp_zone
 
   allow_stopping_for_update = true

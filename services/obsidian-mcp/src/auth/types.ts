@@ -2,8 +2,8 @@
 // Per the styleguide, types reused across more than one function-folder
 // belong at the module level.
 
+import type { AuthError } from "@niranjan/vault-shared/lib/errors";
 import type { Effect } from "effect";
-import type { AuthError } from "../lib/errors/AuthError";
 
 /**
  * What an authenticated request looks like once an AuthProvider has

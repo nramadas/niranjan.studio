@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { Vault, type VaultImpl } from "@niranjan/vault-shared/couchdb";
 import { Effect, Layer, ManagedRuntime } from "effect";
+import { describe, expect, it, vi } from "vitest";
 import { updateNote } from "./index.ts";
-import { Vault, type VaultImpl } from "../../../couchdb/Vault";
 
 describe("updateNote tool", () => {
   it("invokes Vault.updateNote with the supplied patch", async () => {
@@ -20,6 +20,7 @@ describe("updateNote tool", () => {
       listNotes: () => Effect.succeed([]),
       listRecent: () => Effect.succeed([]),
       readNote: () => Effect.succeed({} as never),
+      readNoteById: () => Effect.fail(new Error("stub")) as never,
       readAllForIndex: () => Effect.succeed([]),
       createNote: () => Effect.succeed({} as never),
       updateNote: updateSpy as never,

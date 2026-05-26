@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { Vault, type VaultImpl } from "@niranjan/vault-shared/couchdb";
 import { Effect, Layer, ManagedRuntime } from "effect";
+import { describe, expect, it, vi } from "vitest";
 import { deleteNote } from "./index.ts";
-import { Vault, type VaultImpl } from "../../../couchdb/Vault";
 
 describe("deleteNote tool", () => {
   it("invokes Vault.deleteNote and returns ok+path", async () => {
@@ -10,6 +10,7 @@ describe("deleteNote tool", () => {
       listNotes: () => Effect.succeed([]),
       listRecent: () => Effect.succeed([]),
       readNote: () => Effect.succeed({} as never),
+      readNoteById: () => Effect.fail(new Error("stub")) as never,
       readAllForIndex: () => Effect.succeed([]),
       createNote: () => Effect.succeed({} as never),
       updateNote: () => Effect.succeed({} as never),

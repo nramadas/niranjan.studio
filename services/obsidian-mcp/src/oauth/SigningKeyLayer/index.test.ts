@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { generateKeyPair, exportPKCS8 } from "jose";
 import { Effect, Redacted } from "effect";
-import { SigningKeyLayer } from "./index.ts";
+import { exportPKCS8, generateKeyPair } from "jose";
+import { describe, expect, it } from "vitest";
 import { SigningKey } from "../SigningKey";
+import { SigningKeyLayer } from "./index.ts";
 
 const mkCfg = async () => {
   const { privateKey } = await generateKeyPair("RS256", { modulusLength: 2048, extractable: true });
@@ -42,7 +42,10 @@ describe("SigningKeyLayer", () => {
     const out = await Effect.runPromise(
       Effect.gen(function* () {
         const k = yield* SigningKey;
-        const jwt = yield* k.sign({ sub: "user@example.com", scope: "test" }, { expiresInSeconds: 60 });
+        const jwt = yield* k.sign(
+          { sub: "user@example.com", scope: "test" },
+          { expiresInSeconds: 60 },
+        );
         return yield* k.verify(jwt);
       }).pipe(Effect.provide(SigningKeyLayer(cfg))),
     );
@@ -58,10 +61,17 @@ describe("SigningKeyLayer", () => {
       Effect.gen(function* () {
         const k = yield* SigningKey;
         const jwt = yield* k.sign({ sub: "x" }, { expiresInSeconds: 60 });
-        // Flip the last char of the signature segment.
+        // Flip a byte in the MIDDLE of the signature segment, not the
+        // last character. The last base64url character of an RS256
+        // signature carries only 2 significant bits (4 padding bits
+        // get masked by the decoder), so tampering there is sometimes a
+        // no-op — flaky. The midpoint character is fully significant.
         const parts = jwt.split(".");
         const sig = parts[2] ?? "";
-        const tampered = `${parts[0]}.${parts[1]}.${sig.slice(0, -1)}${sig.endsWith("A") ? "B" : "A"}`;
+        const mid = Math.floor(sig.length / 2);
+        const oldChar = sig[mid] ?? "A";
+        const newChar = oldChar === "A" ? "B" : "A";
+        const tampered = `${parts[0]}.${parts[1]}.${sig.slice(0, mid)}${newChar}${sig.slice(mid + 1)}`;
         return yield* k.verify(tampered);
       }).pipe(Effect.provide(SigningKeyLayer(cfg))),
     );

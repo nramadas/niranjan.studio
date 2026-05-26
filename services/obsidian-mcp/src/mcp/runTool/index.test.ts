@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { Data, Effect, Layer, ManagedRuntime } from "effect";
+import { describe, expect, it } from "vitest";
 import { runTool } from "./index.ts";
 
 class MyError extends Data.TaggedError("MyError")<{ readonly message: string }> {}
@@ -24,7 +24,10 @@ describe("runTool", () => {
   it("renders a tagged error as a structured isError result", async () => {
     const runtime = ManagedRuntime.make(Layer.empty);
     const inner = await runtime.runtime();
-    const result = await runTool(inner, "test_tool")(Effect.fail(new MyError({ message: "kaboom" })));
+    const result = await runTool(
+      inner,
+      "test_tool",
+    )(Effect.fail(new MyError({ message: "kaboom" })));
     expect(result.isError).toBe(true);
     const payload = JSON.parse(result.content[0]?.text ?? "{}");
     expect(payload.tag).toBe("MyError");

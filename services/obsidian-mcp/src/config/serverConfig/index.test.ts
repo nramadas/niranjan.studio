@@ -1,13 +1,11 @@
-import { describe, expect, it } from "vitest";
 import { ConfigProvider, Effect } from "effect";
+import { describe, expect, it } from "vitest";
 import { serverConfig } from "./index.ts";
 
 describe("serverConfig", () => {
   it("applies sensible defaults", async () => {
     const out = await Effect.runPromise(
-      serverConfig.pipe(
-        Effect.withConfigProvider(ConfigProvider.fromMap(new Map())),
-      ),
+      serverConfig.pipe(Effect.withConfigProvider(ConfigProvider.fromMap(new Map()))),
     );
     expect(out.port).toBe(8080);
     expect(out.hostname).toBe("localhost:8080");

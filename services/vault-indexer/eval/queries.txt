@@ -1,0 +1,16 @@
+# Evaluation query set for scripts/vault-indexer/evaluate.sh.
+# One query per line. Lines starting with '#' are comments.
+# Add queries that test the kinds of recall you care about — typical
+# searches you'd actually run, plus a few that should NOT match
+# anything to test for false-positive bias.
+
+how do I configure cloudflared on the VM
+oauth signing key rotation procedure
+LiveSync passphrase recovery
+e2-micro free tier pitfalls
+embedding model migration
+backfill failed partway through
+search results are stale after an edit
+where are the secrets stored
+notes about coffee
+recipe for sourdough bread

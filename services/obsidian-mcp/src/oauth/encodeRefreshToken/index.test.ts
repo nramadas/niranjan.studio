@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { exportPKCS8, generateKeyPair, decodeJwt } from "jose";
 import { Effect, Redacted } from "effect";
-import { encodeRefreshToken } from "./index.ts";
+import { decodeJwt, exportPKCS8, generateKeyPair } from "jose";
+import { describe, expect, it } from "vitest";
 import { SigningKeyLayer } from "../SigningKeyLayer";
+import { encodeRefreshToken } from "./index.ts";
 
 describe("encodeRefreshToken", () => {
   it("signs a JWT with the refresh_token type discriminator", async () => {

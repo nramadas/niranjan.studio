@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { ConfigProvider, Effect, Redacted } from "effect";
+import { describe, expect, it } from "vitest";
 import { oauthConfig } from "./index.ts";
 
 describe("oauthConfig", () => {
@@ -9,7 +9,10 @@ describe("oauthConfig", () => {
         Effect.withConfigProvider(
           ConfigProvider.fromMap(
             new Map([
-              ["OAUTH_SIGNING_KEY", "-----BEGIN PRIVATE KEY-----\nFAKE\n-----END PRIVATE KEY-----\n"],
+              [
+                "OAUTH_SIGNING_KEY",
+                "-----BEGIN PRIVATE KEY-----\nFAKE\n-----END PRIVATE KEY-----\n",
+              ],
               ["OAUTH_ISSUER", "https://mcp.example"],
             ]),
           ),

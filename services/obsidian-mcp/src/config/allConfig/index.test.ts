@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
 import { ConfigProvider, Effect, Redacted } from "effect";
+import { describe, expect, it } from "vitest";
 import { allConfig } from "./index.ts";
 
 describe("allConfig", () => {
@@ -14,12 +14,17 @@ describe("allConfig", () => {
               ["COUCHDB_USER", "obsidian-mcp"],
               ["COUCHDB_PASSWORD", "couch-secret"],
               ["LIVESYNC_PASSPHRASE", "diceware"],
-              ["OAUTH_SIGNING_KEY", "-----BEGIN PRIVATE KEY-----\nFAKE\n-----END PRIVATE KEY-----\n"],
+              [
+                "OAUTH_SIGNING_KEY",
+                "-----BEGIN PRIVATE KEY-----\nFAKE\n-----END PRIVATE KEY-----\n",
+              ],
               ["OAUTH_ISSUER", "https://mcp.example"],
               ["GOOGLE_OAUTH_CLIENT_ID", "1234.apps.googleusercontent.com"],
               ["GOOGLE_OAUTH_CLIENT_SECRET", "GOCSPX-secret"],
               ["GOOGLE_OAUTH_REDIRECT_URI", "https://mcp.example/oauth/google/callback"],
               ["ALLOWED_EMAILS", "user@example.com"],
+              ["INDEXER_URL", "https://indexer.example"],
+              ["INDEXER_BEARER_TOKEN", "search-token"],
             ]),
           ),
         ),
@@ -33,6 +38,9 @@ describe("allConfig", () => {
     expect(out.allowedEmails.emails.has("user@example.com")).toBe(true);
     expect(out.server.port).toBe(8080);
     expect(out.search.rebuildDebounceMs).toBe(5000);
+    expect(out.indexer.url).toBe("https://indexer.example");
+    expect(Redacted.value(out.indexer.bearer)).toBe("search-token");
+    expect(out.indexer.timeoutMs).toBe(3000);
   });
 
   it("fails when any required field is missing", async () => {

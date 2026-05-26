@@ -111,3 +111,11 @@ variable "mcp_allowed_emails" {
     error_message = "mcp_allowed_emails must list at least one email — leaving it empty would let any Google account in."
   }
 }
+
+# ─── Vault indexer (Phase 3) ────────────────────────────────────────────────
+
+variable "indexer_subdomain" {
+  type        = string
+  description = "Subdomain that fronts the on-VM vault-indexer /search endpoint. Hostname becomes <indexer_subdomain>.<domain>. The route is private — Cloudflare Access only admits the MCP server's service token."
+  default     = "indexer"
+}

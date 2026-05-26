@@ -1,6 +1,6 @@
+import { Vault } from "@niranjan/vault-shared/couchdb";
 import { Effect } from "effect";
 import { z } from "zod";
-import { Vault } from "../../../couchdb/Vault";
 import { runTool } from "../../runTool";
 import type { ServerRuntime } from "../../types.ts";
 
@@ -16,7 +16,10 @@ const config = {
 };
 
 const handler = (runtime: ServerRuntime) => async (args: { path: string }) =>
-  runTool(runtime, "delete_note")(
+  runTool(
+    runtime,
+    "delete_note",
+  )(
     Effect.gen(function* () {
       const vault = yield* Vault;
       yield* vault.deleteNote(args.path);
