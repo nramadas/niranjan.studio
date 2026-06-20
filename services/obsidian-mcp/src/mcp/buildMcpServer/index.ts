@@ -3,10 +3,13 @@ import { appendToNote } from "../tools/appendToNote";
 import { createNote } from "../tools/createNote";
 import { deleteNote } from "../tools/deleteNote";
 import { editNote } from "../tools/editNote";
+import { getMeetingBot } from "../tools/getMeetingBot";
 import { listNotes } from "../tools/listNotes";
 import { listRecentChanges } from "../tools/listRecentChanges";
 import { readNote } from "../tools/readNote";
 import { searchNotes } from "../tools/searchNotes";
+import { startMeetingBot } from "../tools/startMeetingBot";
+import { stopMeetingBot } from "../tools/stopMeetingBot";
 import { updateNote } from "../tools/updateNote";
 import type { ServerRuntime } from "../types.ts";
 
@@ -44,6 +47,9 @@ export const buildMcpServer = (runtime: ServerRuntime): McpServer => {
   reg(editNote(runtime) as never);
   reg(deleteNote(runtime) as never);
   reg(listRecentChanges(runtime) as never);
+  reg(startMeetingBot(runtime) as never);
+  reg(stopMeetingBot(runtime) as never);
+  reg(getMeetingBot(runtime) as never);
 
   return server;
 };

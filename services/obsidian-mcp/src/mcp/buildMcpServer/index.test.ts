@@ -2,6 +2,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { Vault, type VaultImpl } from "@niranjan/vault-shared/couchdb";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { describe, expect, it } from "vitest";
+import { RecallClient } from "../../meeting/RecallClient";
+import { TranscriptionClient } from "../../meeting/TranscriptionClient";
 import { IndexerClient } from "../../search/IndexerClient";
 import { SearchIndex } from "../../search/SearchIndex";
 import { buildMcpServer } from "./index.ts";
@@ -28,12 +30,26 @@ const stubIndexerClient = {
   search: () => Effect.succeed([]),
 };
 
+const stubRecallClient = {
+  createBot: () => Effect.succeed({ id: "stub" }),
+  getBot: () => Effect.succeed({ id: "stub" }),
+  leaveCall: () => Effect.void,
+  getRecording: () => Effect.succeed({ participants: [] }),
+  deleteMedia: () => Effect.void,
+};
+
+const stubTranscriptionClient = {
+  transcribe: () => Effect.succeed({ segments: [], modelName: "stub" }),
+};
+
 describe("buildMcpServer", () => {
-  it("constructs an McpServer with all nine tools registered", async () => {
+  it("constructs an McpServer with all twelve tools registered", async () => {
     const layer = Layer.mergeAll(
       Layer.succeed(Vault, stubVault),
       Layer.succeed(SearchIndex, stubSearch),
       Layer.succeed(IndexerClient, stubIndexerClient),
+      Layer.succeed(RecallClient, stubRecallClient),
+      Layer.succeed(TranscriptionClient, stubTranscriptionClient),
     );
     const runtime = ManagedRuntime.make(layer);
     const inner = await runtime.runtime();

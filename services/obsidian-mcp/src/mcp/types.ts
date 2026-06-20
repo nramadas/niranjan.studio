@@ -2,11 +2,15 @@
 
 import type { Vault } from "@niranjan/vault-shared/couchdb";
 import type { Runtime } from "effect";
+import type { RecallClient } from "../meeting/RecallClient";
+import type { TranscriptionClient } from "../meeting/TranscriptionClient";
 import type { IndexerClient } from "../search/IndexerClient";
 import type { SearchIndex } from "../search/SearchIndex";
 
 /** The runtime type captured at server boot, with all tool deps resolved. */
-export type ServerRuntime = Runtime.Runtime<Vault | SearchIndex | IndexerClient>;
+export type ServerRuntime = Runtime.Runtime<
+  Vault | SearchIndex | IndexerClient | RecallClient | TranscriptionClient
+>;
 
 /**
  * The MCP SDK's CallToolResult requires an index signature

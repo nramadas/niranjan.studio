@@ -1,0 +1,36 @@
+{
+  "name": "transcription-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Isolated Cloud Run speech-to-text service for the Obsidian vault stack. Accepts an audio artifact (URL or bytes) and returns a diarized transcript through a pluggable backend (Deepgram now, a local model later). Holds no vault passphrase; reached only by obsidian-mcp over Cloud Run IAM.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsup",
+    "start": "node dist/main.js",
+    "dev": "tsx watch src/main.ts",
+    "lint": "biome check src",
+    "format": "biome format --write src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@niranjan/vault-shared": "workspace:*",
+    "effect": "^3.21.0",
+    "nano": "^11.0.5",
+    "octagonal-wheels": "^0.1.45",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

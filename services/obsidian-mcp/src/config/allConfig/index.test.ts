@@ -25,6 +25,10 @@ describe("allConfig", () => {
               ["ALLOWED_EMAILS", "user@example.com"],
               ["INDEXER_URL", "https://indexer.example"],
               ["INDEXER_BEARER_TOKEN", "search-token"],
+              ["RECALL_API_KEY", "recall-key"],
+              ["RECALL_WEBHOOK_SECRET", "recall-webhook-secret"],
+              ["TRANSCRIPTION_URL", "https://transcription.example"],
+              ["TRANSCRIPTION_BEARER_TOKEN", "transcription-bearer"],
             ]),
           ),
         ),
@@ -41,6 +45,11 @@ describe("allConfig", () => {
     expect(out.indexer.url).toBe("https://indexer.example");
     expect(Redacted.value(out.indexer.bearer)).toBe("search-token");
     expect(out.indexer.timeoutMs).toBe(3000);
+    expect(out.recall.apiBase).toBe("https://us-east-1.recall.ai");
+    expect(out.recall.botName).toBe("Meeting Transcriber");
+    expect(Redacted.value(out.recall.apiKey)).toBe("recall-key");
+    expect(out.transcription.url).toBe("https://transcription.example");
+    expect(out.transcription.useIdToken).toBe(true);
   });
 
   it("fails when any required field is missing", async () => {
