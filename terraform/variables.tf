@@ -119,3 +119,11 @@ variable "indexer_subdomain" {
   description = "Subdomain that fronts the on-VM vault-indexer /search endpoint. Hostname becomes <indexer_subdomain>.<domain>. The route is private — Cloudflare Access only admits the MCP server's service token."
   default     = "indexer"
 }
+
+# ─── Meeting transcription (Phase 4) ────────────────────────────────────────
+
+variable "recall_api_base" {
+  type        = string
+  description = "Recall.ai regional API host. Recall keys are region-scoped, so this MUST match your Recall account's region (us-east-1, us-west-2, eu-central-1, ap-northeast-1) — a mismatch returns 401/404 on every bot call."
+  default     = "https://us-west-2.recall.ai"
+}

@@ -22,7 +22,7 @@
 
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { Cause, Effect, Exit, Layer, LogLevel, Logger, ManagedRuntime } from "effect";
+import { Cause, Effect, Exit, Layer, LogLevel, Logger, ManagedRuntime, Redacted } from "effect";
 
 import {
   CouchClient,
@@ -34,6 +34,12 @@ import { cloudRunLogger } from "@niranjan/vault-shared/lib";
 import { AuthProvider, OAuthAuthProviderLayer, types as authTypes } from "./auth";
 import { allConfig } from "./config";
 import { buildMcpServer } from "./mcp";
+import {
+  RecallClientLayer,
+  TranscriptionClientLayer,
+  handleRecordingReady,
+  verifyRecallSignature,
+} from "./meeting";
 import {
   SigningKey,
   SigningKeyLayer,
@@ -152,6 +158,18 @@ const parseJsonBody = (body: string): Record<string, unknown> => {
   }
 };
 
+// In-flight Recall webhook de-dupe. Svix retries a delivery if it doesn't
+// get a prompt 2xx, and one bot's recording is processed synchronously
+// within the request (fetch + transcribe + write), so a retry can arrive
+// mid-flight. This best-effort per-instance guard skips re-processing a bot
+// already in progress; createNote's conflict handling covers the rest.
+const inFlightBots = new Set<string>();
+
+const getHeader = (req: IncomingMessage, name: string): string | undefined => {
+  const v = req.headers[name];
+  return Array.isArray(v) ? v[0] : v;
+};
+
 const main = Effect.gen(function* () {
   const cfg = yield* allConfig;
   yield* Effect.logInfo(`booting obsidian-mcp on :${cfg.server.port} (auth=oauth)`);
@@ -168,6 +186,20 @@ const main = Effect.gen(function* () {
     cfAccessClientSecret: cfg.indexer.cfAccessClientSecret,
     timeoutMs: cfg.indexer.timeoutMs,
   });
+  const recallLayer = RecallClientLayer({
+    apiBase: cfg.recall.apiBase,
+    apiKey: cfg.recall.apiKey,
+    botName: cfg.recall.botName,
+    recordingConfigJson: cfg.recall.recordingConfigJson,
+    timeoutMs: cfg.recall.timeoutMs,
+  });
+  const transcriptionLayer = TranscriptionClientLayer({
+    url: cfg.transcription.url,
+    bearer: cfg.transcription.bearer,
+    audience: cfg.transcription.audience,
+    useIdToken: cfg.transcription.useIdToken,
+    timeoutMs: cfg.transcription.timeoutMs,
+  });
   const signingLayer = SigningKeyLayer(cfg.oauth);
   const authLayer = OAuthAuthProviderLayer({
     issuer: cfg.oauth.issuer,
@@ -179,6 +211,8 @@ const main = Effect.gen(function* () {
     vaultLayer,
     searchLayer,
     indexerLayer,
+    recallLayer,
+    transcriptionLayer,
     signingLayer,
     authLayer,
   );
@@ -347,6 +381,110 @@ const main = Effect.gen(function* () {
           }) as Effect.Effect<HandlerResponse, unknown, never>,
         );
       });
+      return;
+    }
+
+    // Recall.ai recording-ready webhook. Outside the OAuth-gated surface —
+    // Recall is not a Claude client and holds no token — so it is verified
+    // by Svix signature instead. Processing is synchronous so Cloud Run
+    // keeps CPU allocated for the duration; we respond 200 on success.
+    if (path === "/recall/webhook" && method === "POST") {
+      void readBody(req)
+        .then((body) => {
+          // Recall white-labels the Svix headers as webhook-*; older accounts
+          // use svix-*. Accept either so verification works regardless of tier.
+          const verified = verifyRecallSignature(
+            {
+              svixId: getHeader(req, "webhook-id") ?? getHeader(req, "svix-id"),
+              svixTimestamp:
+                getHeader(req, "webhook-timestamp") ?? getHeader(req, "svix-timestamp"),
+              svixSignature:
+                getHeader(req, "webhook-signature") ?? getHeader(req, "svix-signature"),
+            },
+            body,
+            Redacted.value(cfg.recall.webhookSecret),
+          );
+          if (!verified) {
+            console.warn("recall webhook: signature verification failed");
+            sendJson(res, 401, { error: "invalid_signature" });
+            return;
+          }
+
+          // Signature already verified the raw bytes, so a parse failure is a
+          // genuine upstream defect — surface it (400) rather than silently
+          // swallowing to {} and acking 200.
+          let evt: {
+            event?: string;
+            data?: { bot?: { id?: string; metadata?: Record<string, unknown> } };
+          };
+          try {
+            evt = JSON.parse(body);
+          } catch (err) {
+            console.error(`recall webhook: signature ok but body did not parse: ${formatErr(err)}`);
+            sendJson(res, 400, { error: "invalid_body" });
+            return;
+          }
+          const event = evt.event ?? "";
+          const botId = evt.data?.bot?.id;
+          if (event !== "bot.done" || typeof botId !== "string") {
+            sendJson(res, 200, { ok: true, ignored: event });
+            return;
+          }
+          if (inFlightBots.has(botId)) {
+            sendJson(res, 200, { ok: true, in_flight: true });
+            return;
+          }
+          inFlightBots.add(botId);
+
+          // Title + a stable date come from the metadata stamped at dispatch, so
+          // the note path is deterministic across Svix retries (the existence
+          // pre-check + createNote conflict-catch then dedupe).
+          const meta = evt.data?.bot?.metadata ?? {};
+          const noteTitle = typeof meta.note_title === "string" ? meta.note_title : "";
+          const dispatchedAt =
+            typeof meta.dispatched_at === "string" ? meta.dispatched_at : undefined;
+          const date = (dispatchedAt ?? new Date().toISOString()).slice(0, 10);
+
+          void runtime
+            .runPromiseExit(
+              handleRecordingReady({
+                botId,
+                noteTitle,
+                startedAt: dispatchedAt,
+                folder: cfg.recall.transcriptsFolder,
+                date,
+              }) as Effect.Effect<
+                { notePath: string; segments: number; skipped?: string },
+                unknown,
+                never
+              >,
+            )
+            .then((exit) => {
+              inFlightBots.delete(botId);
+              if (Exit.isSuccess(exit)) {
+                sendJson(res, 200, { ok: true, ...exit.value });
+                return;
+              }
+              const pretty = Cause.pretty(exit.cause);
+              console.error(`recall webhook processing failed: ${pretty}`);
+              sendJson(res, 500, { error: "processing_failed", error_description: pretty });
+            })
+            .catch((err) => {
+              inFlightBots.delete(botId);
+              console.error(`recall webhook crashed: ${formatErr(err)}`);
+              if (!res.headersSent) {
+                sendJson(res, 500, { error: "server_error", error_description: String(err) });
+              }
+            });
+        })
+        .catch((err) => {
+          // A client disconnect / aborted body rejects readBody; handle it so
+          // the rejection isn't unhandled and the socket isn't left hanging.
+          console.error(`recall webhook readBody failed: ${formatErr(err)}`);
+          if (!res.headersSent) {
+            sendJson(res, 400, { error: "read_error" });
+          }
+        });
       return;
     }
 

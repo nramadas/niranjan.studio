@@ -190,6 +190,65 @@ resource "google_secret_manager_secret_iam_member" "obsidian_mcp_google_oauth_cl
   member    = "serviceAccount:${google_service_account.obsidian_mcp.email}"
 }
 
+# ─── Recall.ai meeting-bot credentials (Phase 4) ────────────────────────────
+#
+# RECALL_API_KEY authenticates create/leave/delete bot calls.
+# RECALL_WEBHOOK_SECRET is the Svix signing secret (`whsec_...`) used to
+# verify the recording-ready webhook posted to mcp.<domain>/recall/webhook.
+# Both are placeholders, populated out of band from the Recall dashboard.
+# (The transcription-service URL + bearer the MCP also needs live in
+# transcription-service.tf.)
+
+resource "google_secret_manager_secret" "obsidian_mcp_recall_api_key" {
+  secret_id = "obsidian-mcp-recall-api-key"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.secret_manager]
+}
+
+resource "google_secret_manager_secret_version" "obsidian_mcp_recall_api_key_placeholder" {
+  secret      = google_secret_manager_secret.obsidian_mcp_recall_api_key.id
+  secret_data = "REPLACE_ME_WITH_RECALL_API_KEY"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
+
+resource "google_secret_manager_secret_iam_member" "obsidian_mcp_recall_api_key_accessor" {
+  secret_id = google_secret_manager_secret.obsidian_mcp_recall_api_key.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.obsidian_mcp.email}"
+}
+
+resource "google_secret_manager_secret" "obsidian_mcp_recall_webhook_secret" {
+  secret_id = "obsidian-mcp-recall-webhook-secret"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.secret_manager]
+}
+
+resource "google_secret_manager_secret_version" "obsidian_mcp_recall_webhook_secret_placeholder" {
+  secret      = google_secret_manager_secret.obsidian_mcp_recall_webhook_secret.id
+  secret_data = "REPLACE_ME_WITH_RECALL_WEBHOOK_SIGNING_SECRET"
+
+  lifecycle {
+    ignore_changes = [secret_data]
+  }
+}
+
+resource "google_secret_manager_secret_iam_member" "obsidian_mcp_recall_webhook_secret_accessor" {
+  secret_id = google_secret_manager_secret.obsidian_mcp_recall_webhook_secret.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.obsidian_mcp.email}"
+}
+
 # ─── Cloud Run service ──────────────────────────────────────────────────────
 
 resource "google_cloud_run_v2_service" "obsidian_mcp" {
@@ -303,6 +362,52 @@ resource "google_cloud_run_v2_service" "obsidian_mcp" {
         }
       }
 
+      # ─── Phase 4: meeting transcription ─────────────────────────────
+      env {
+        name  = "TRANSCRIPTION_URL"
+        value = google_cloud_run_v2_service.transcription_service.uri
+      }
+
+      env {
+        name  = "TRANSCRIPTION_USE_ID_TOKEN"
+        value = "true"
+      }
+
+      env {
+        name  = "RECALL_API_BASE"
+        value = var.recall_api_base
+      }
+
+      env {
+        name = "TRANSCRIPTION_BEARER_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.transcription_service_bearer.secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      env {
+        name = "RECALL_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.obsidian_mcp_recall_api_key.secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      env {
+        name = "RECALL_WEBHOOK_SECRET"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.obsidian_mcp_recall_webhook_secret.secret_id
+            version = "latest"
+          }
+        }
+      }
+
       env {
         name = "COUCHDB_PASSWORD"
         value_source {
@@ -387,6 +492,13 @@ resource "google_cloud_run_v2_service" "obsidian_mcp" {
     google_secret_manager_secret_version.vault_indexer_search_token,
     google_secret_manager_secret_version.vault_indexer_cf_access_client_id,
     google_secret_manager_secret_version.vault_indexer_cf_access_client_secret,
+    # Phase 4: Recall + transcription-service secrets.
+    google_secret_manager_secret_iam_member.obsidian_mcp_recall_api_key_accessor,
+    google_secret_manager_secret_iam_member.obsidian_mcp_recall_webhook_secret_accessor,
+    google_secret_manager_secret_iam_member.transcription_service_bearer_mcp,
+    google_secret_manager_secret_version.obsidian_mcp_recall_api_key_placeholder,
+    google_secret_manager_secret_version.obsidian_mcp_recall_webhook_secret_placeholder,
+    google_secret_manager_secret_version.transcription_service_bearer,
   ]
 }
 

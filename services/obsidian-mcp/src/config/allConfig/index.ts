@@ -5,8 +5,10 @@ import { allowedEmailsConfig } from "../allowedEmailsConfig";
 import { googleOidcConfig } from "../googleOidcConfig";
 import { indexerConfig } from "../indexerConfig";
 import { oauthConfig } from "../oauthConfig";
+import { recallConfig } from "../recallConfig";
 import { searchConfig } from "../searchConfig";
 import { serverConfig } from "../serverConfig";
+import { transcriptionConfig } from "../transcriptionConfig";
 
 /**
  * The combined config tree the runtime resolves at boot. Composing the
@@ -23,6 +25,8 @@ export const allConfig = Config.all({
   server: serverConfig,
   search: searchConfig,
   indexer: indexerConfig,
+  recall: recallConfig,
+  transcription: transcriptionConfig,
 });
 
 export type AppConfig = Config.Config.Success<typeof allConfig>;

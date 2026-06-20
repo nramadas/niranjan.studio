@@ -10,5 +10,7 @@ export * from "./googleOidcConfig";
 export * from "./indexerConfig";
 export * from "@niranjan/vault-shared/config/liveSyncConfig";
 export * from "./oauthConfig";
+export * from "./recallConfig";
 export * from "./searchConfig";
 export * from "./serverConfig";
+export * from "./transcriptionConfig";

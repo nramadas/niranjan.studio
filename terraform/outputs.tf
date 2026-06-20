@@ -140,3 +140,35 @@ output "vault_indexer_logs_command" {
   description = "Tail indexer container logs over SSH."
   value       = "gcloud compute ssh ${google_compute_instance.obsidian.name} --project=${var.gcp_project_id} --zone=${var.gcp_zone} --command 'cd /opt/obsidian && docker compose logs --tail 200 -f vault-indexer'"
 }
+
+# ─── Transcription service (Phase 4) ────────────────────────────────────────
+
+output "transcription_service_url" {
+  description = "Internal Cloud Run URL of the transcription-service (IAM-private — only the obsidian-mcp SA can invoke it). The MCP reads this as TRANSCRIPTION_URL."
+  value       = google_cloud_run_v2_service.transcription_service.uri
+}
+
+output "transcription_service_artifact_repo" {
+  description = "Artifact Registry repo URL used by scripts/transcription-service/deploy.sh."
+  value       = "${google_artifact_registry_repository.transcription_service.location}-docker.pkg.dev/${var.gcp_project_id}/${google_artifact_registry_repository.transcription_service.repository_id}"
+}
+
+output "transcription_deepgram_api_key_set_command" {
+  description = "One-time command to populate the Deepgram API key (from the Deepgram console)."
+  value       = "printf '%s' '<paste deepgram api key here>' | gcloud secrets versions add ${google_secret_manager_secret.transcription_deepgram_api_key.secret_id} --project=${var.gcp_project_id} --data-file=-"
+}
+
+output "obsidian_mcp_recall_api_key_set_command" {
+  description = "One-time command to populate the Recall.ai API key (from the Recall dashboard)."
+  value       = "printf '%s' '<paste recall api key here>' | gcloud secrets versions add ${google_secret_manager_secret.obsidian_mcp_recall_api_key.secret_id} --project=${var.gcp_project_id} --data-file=-"
+}
+
+output "obsidian_mcp_recall_webhook_secret_set_command" {
+  description = "One-time command to populate the Recall webhook (Svix) signing secret. Get the whsec_... value from the Recall webhooks dashboard, and point the webhook destination at https://<mcp_subdomain>.<domain>/recall/webhook."
+  value       = "printf '%s' '<paste whsec_... here>' | gcloud secrets versions add ${google_secret_manager_secret.obsidian_mcp_recall_webhook_secret.secret_id} --project=${var.gcp_project_id} --data-file=-"
+}
+
+output "transcription_service_logs_command" {
+  description = "Tail Cloud Run logs for the transcription-service."
+  value       = "gcloud run services logs tail transcription-service --project=${var.gcp_project_id} --region=${var.gcp_region}"
+}
