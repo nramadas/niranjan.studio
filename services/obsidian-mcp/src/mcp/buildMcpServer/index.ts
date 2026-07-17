@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { serverInfo } from "../../branding";
 import { appendToNote } from "../tools/appendToNote";
 import { createNote } from "../tools/createNote";
 import { deleteNote } from "../tools/deleteNote";
@@ -24,14 +25,11 @@ import type { ServerRuntime } from "../types.ts";
  * @returns       The constructed McpServer, ready to attach to a transport.
  */
 export const buildMcpServer = (runtime: ServerRuntime): McpServer => {
-  const server = new McpServer(
-    { name: "obsidian-mcp", version: "0.1.0" },
-    {
-      capabilities: { tools: {} },
-      instructions:
-        "Read, search, and edit the user's Obsidian vault. Notes are stored as markdown with optional YAML frontmatter. Prefer search_notes over list_notes when looking for content. For modifying notes: prefer edit_note (find/replace) when changing a small region of an existing note; use update_note when you need to rewrite the body wholesale or change frontmatter; use append_to_note only for appending to the end. Avoid delete_note + create_note for in-place changes.",
-    },
-  );
+  const server = new McpServer(serverInfo, {
+    capabilities: { tools: {} },
+    instructions:
+      "Read, search, and edit the user's Obsidian vault. Notes are stored as markdown with optional YAML frontmatter. Prefer search_notes over list_notes when looking for content. For modifying notes: prefer edit_note (find/replace) when changing a small region of an existing note; use update_note when you need to rewrite the body wholesale or change frontmatter; use append_to_note only for appending to the end. Avoid delete_note + create_note for in-place changes.",
+  });
 
   // Register tools individually rather than via a loop because the SDK
   // generic infers the input-schema type per call; iterating collapses

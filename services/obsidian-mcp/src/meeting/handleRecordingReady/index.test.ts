@@ -4,15 +4,22 @@ import { Effect, Exit, Layer, ManagedRuntime } from "effect";
 import { describe, expect, it } from "vitest";
 import { RecallClient, type RecallClientImpl } from "../RecallClient";
 import { TranscriptionClient, type TranscriptionClientImpl } from "../TranscriptionClient";
+import type { SpeakerInterval, TranscriptSegment } from "../types.ts";
 import { handleRecordingReady } from "./index.ts";
 
 interface Calls {
   transcribed: boolean;
   created?: string;
+  body?: string;
   deleted: boolean;
 }
 
-const setup = (opts: { noteExists: boolean; audioUrl?: string }) => {
+const setup = (opts: {
+  noteExists: boolean;
+  audioUrl?: string;
+  speakerTimeline?: ReadonlyArray<SpeakerInterval>;
+  segments?: ReadonlyArray<TranscriptSegment>;
+}) => {
   const calls: Calls = { transcribed: false, deleted: false };
 
   const vault: VaultImpl = {
@@ -24,8 +31,9 @@ const setup = (opts: { noteExists: boolean; audioUrl?: string }) => {
         : Effect.fail(new NoteNotFoundError({ path }))) as never,
     readNoteById: () => Effect.fail(new Error("stub")) as never,
     readAllForIndex: () => Effect.succeed([]),
-    createNote: ((path: string) => {
+    createNote: ((path: string, body: string) => {
       calls.created = path;
+      calls.body = body;
       return Effect.succeed({ path });
     }) as never,
     updateNote: () => Effect.succeed({} as never),
@@ -42,6 +50,7 @@ const setup = (opts: { noteExists: boolean; audioUrl?: string }) => {
       Effect.succeed({
         audioUrl: opts.audioUrl,
         participants: ["Alice", "Bob"],
+        speakerTimeline: opts.speakerTimeline ?? [],
         platform: "google_meet",
       }),
     deleteMedia: () => {
@@ -54,7 +63,7 @@ const setup = (opts: { noteExists: boolean; audioUrl?: string }) => {
     transcribe: () => {
       calls.transcribed = true;
       return Effect.succeed({
-        segments: [{ speaker: 0, start: 0, end: 2, text: "Hi" }],
+        segments: opts.segments ?? [{ speaker: 0, start: 0, end: 2, text: "Hi" }],
         modelName: "deepgram-nova-3",
         durationSec: 2,
       });
@@ -106,6 +115,37 @@ describe("handleRecordingReady", () => {
     expect(calls.transcribed).toBe(true);
     expect(calls.created).toBe("Meetings/2026-06-18 — Standup.md");
     expect(calls.deleted).toBe(true);
+  });
+
+  it("labels turns with real names by aligning segments to the speaker timeline", async () => {
+    const { layer, calls } = setup({
+      noteExists: false,
+      audioUrl: "https://x/a.mp3",
+      segments: [
+        { speaker: 0, start: 0, end: 4, text: "Morning all." },
+        { speaker: 1, start: 5, end: 9, text: "Hey." },
+      ],
+      speakerTimeline: [
+        { name: "Alice", start: 0, end: 4 },
+        { name: "Bob", start: 5, end: 9 },
+      ],
+    });
+    const exit = await ManagedRuntime.make(layer).runPromiseExit(handleRecordingReady(baseInput));
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(calls.body).toContain("**Alice** (0:00): Morning all.");
+    expect(calls.body).toContain("**Bob** (0:05): Hey.");
+    expect(calls.body).not.toContain("**Speaker 0**");
+  });
+
+  it("falls back to numeric labels when there is no speaker timeline", async () => {
+    const { layer, calls } = setup({
+      noteExists: false,
+      audioUrl: "https://x/a.mp3",
+      segments: [{ speaker: 0, start: 0, end: 4, text: "Morning all." }],
+      speakerTimeline: [],
+    });
+    await ManagedRuntime.make(layer).runPromiseExit(handleRecordingReady(baseInput));
+    expect(calls.body).toContain("**Speaker 0** (0:00): Morning all.");
   });
 
   it("derives a bot-suffixed path for an untitled meeting (no collision)", async () => {

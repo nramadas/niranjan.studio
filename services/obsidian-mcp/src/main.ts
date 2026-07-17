@@ -22,7 +22,17 @@
 
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { Cause, Effect, Exit, Layer, LogLevel, Logger, ManagedRuntime, Redacted } from "effect";
+import {
+  Cause,
+  Effect,
+  Either,
+  Exit,
+  Layer,
+  LogLevel,
+  Logger,
+  ManagedRuntime,
+  Redacted,
+} from "effect";
 
 import {
   CouchClient,
@@ -32,12 +42,20 @@ import {
 } from "@niranjan/vault-shared/couchdb";
 import { cloudRunLogger } from "@niranjan/vault-shared/lib";
 import { AuthProvider, OAuthAuthProviderLayer, types as authTypes } from "./auth";
+import { botCameraJpegBase64, logoFavicon, logoIcon } from "./branding";
 import { allConfig } from "./config";
+import { DigestClientLayer } from "./digest";
 import { buildMcpServer } from "./mcp";
 import {
+  MeetClient,
+  MeetClientLayer,
   RecallClientLayer,
   TranscriptionClientLayer,
+  handleMeetTranscript,
   handleRecordingReady,
+  parseMeetAccounts,
+  parseMeetPushMessage,
+  verifyMeetPushToken,
   verifyRecallSignature,
 } from "./meeting";
 import {
@@ -71,6 +89,17 @@ const sendJson = (res: ServerResponse, status: number, body: unknown) => {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
   res.end(JSON.stringify(body));
+};
+
+// Serve the Sutra logo bytes. These are public + cacheable: the icon is brand
+// art, not a secret, and a client (or a favicon-fallback) must reach it without
+// an OAuth token. The bytes are inlined at build time (see src/branding).
+const sendImage = (res: ServerResponse, bytes: Buffer, contentType: string) => {
+  setCors(res);
+  res.statusCode = 200;
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.end(bytes);
 };
 
 const applyHandlerResponse = (res: ServerResponse, hr: HandlerResponse) => {
@@ -165,6 +194,10 @@ const parseJsonBody = (body: string): Record<string, unknown> => {
 // already in progress; createNote's conflict handling covers the rest.
 const inFlightBots = new Set<string>();
 
+// Same guard for Meet transcript ingestions: Pub/Sub redelivers while a
+// slow ingestion (transcript fetch + digest) is still running.
+const inFlightTranscripts = new Set<string>();
+
 const getHeader = (req: IncomingMessage, name: string): string | undefined => {
   const v = req.headers[name];
   return Array.isArray(v) ? v[0] : v;
@@ -191,6 +224,7 @@ const main = Effect.gen(function* () {
     apiKey: cfg.recall.apiKey,
     botName: cfg.recall.botName,
     recordingConfigJson: cfg.recall.recordingConfigJson,
+    botImageBase64: cfg.recall.botImageEnabled ? botCameraJpegBase64 : undefined,
     timeoutMs: cfg.recall.timeoutMs,
   });
   const transcriptionLayer = TranscriptionClientLayer({
@@ -199,6 +233,50 @@ const main = Effect.gen(function* () {
     audience: cfg.transcription.audience,
     useIdToken: cfg.transcription.useIdToken,
     timeoutMs: cfg.transcription.timeoutMs,
+  });
+  // Meet ingestion is opt-in. When enabled, every value it needs must be
+  // present and the accounts JSON must parse — failing at boot beats a
+  // webhook that 500s in production. When disabled, a malformed accounts
+  // secret is deliberately ignored so it can't break unrelated deploys.
+  let meetAccounts: ReturnType<typeof parseMeetAccounts> = [];
+  if (cfg.meet.enabled) {
+    try {
+      meetAccounts = parseMeetAccounts(Redacted.value(cfg.meet.accountsJson));
+    } catch (err) {
+      return yield* Effect.dieMessage(
+        `MEET_INGEST_ENABLED=true but ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    const missing = [
+      cfg.meet.pushAudience === "" ? "MEET_PUSH_AUDIENCE" : undefined,
+      cfg.meet.pushServiceAccount === "" ? "MEET_PUSH_SERVICE_ACCOUNT" : undefined,
+      meetAccounts.length === 0 ? "MEET_ACCOUNTS_JSON (at least one account)" : undefined,
+      cfg.meet.pubsubTopic === "" ? "MEET_PUBSUB_TOPIC" : undefined,
+    ].filter((v): v is string => v !== undefined);
+    if (missing.length > 0) {
+      return yield* Effect.dieMessage(
+        `MEET_INGEST_ENABLED=true but missing required env: ${missing.join(", ")}`,
+      );
+    }
+    yield* Effect.logInfo(
+      `meet ingestion enabled for accounts: ${meetAccounts.map((a) => a.name).join(", ")}`,
+    );
+  }
+  const meetLayer = MeetClientLayer({
+    clientId: cfg.googleOidc.clientId,
+    clientSecret: cfg.googleOidc.clientSecret,
+    accounts: meetAccounts,
+    pubsubTopic: cfg.meet.pubsubTopic,
+    timeoutMs: cfg.meet.timeoutMs,
+  });
+  // An empty (or still-placeholder — Terraform seeds "REPLACE_ME_...")
+  // API key disables digestion; transcripts still ingest.
+  const digestApiKey = Redacted.value(cfg.digest.apiKey);
+  const digestEnabled = digestApiKey !== "" && !digestApiKey.startsWith("REPLACE_ME");
+  const digestLayer = DigestClientLayer({
+    apiKey: cfg.digest.apiKey,
+    model: cfg.digest.model,
+    timeoutMs: cfg.digest.timeoutMs,
   });
   const signingLayer = SigningKeyLayer(cfg.oauth);
   const authLayer = OAuthAuthProviderLayer({
@@ -213,11 +291,53 @@ const main = Effect.gen(function* () {
     indexerLayer,
     recallLayer,
     transcriptionLayer,
+    meetLayer,
+    digestLayer,
     signingLayer,
     authLayer,
   );
   const runtime = ManagedRuntime.make(appLayer);
   const innerRuntime = yield* Effect.promise(() => runtime.runtime());
+
+  // Keep every account's Workspace Events subscription alive without any
+  // external cron: ensure them at every cold start (deploys recreate them
+  // from nothing), on every transcript push, and on Google's
+  // expirationReminder lifecycle events (see /meet/webhook). One account's
+  // failure never stops the others. Returns the completion promise: the
+  // lifecycle-event branch must AWAIT it before responding, because after
+  // the response Cloud Run throttles CPU (cpu_idle) and background fetches
+  // stall — and the reminder event is the renewal path that matters most.
+  const ensureMeetSubscriptions = (reason: string): Promise<void> => {
+    if (!cfg.meet.enabled) return Promise.resolve();
+    return runtime
+      .runPromiseExit(
+        Effect.gen(function* () {
+          const meet = yield* MeetClient;
+          for (const acct of meet.accounts) {
+            const outcome = yield* Effect.either(meet.ensureSubscription(acct.name));
+            if (Either.isRight(outcome)) {
+              if (outcome.right.action !== "renewed") {
+                yield* Effect.logInfo(
+                  `meet subscription ${outcome.right.action} for "${acct.name}" (${reason})`,
+                );
+              }
+            } else {
+              yield* Effect.logError(
+                `meet subscription upkeep failed for "${acct.name}" (${reason}): ${outcome.left.message}`,
+              );
+            }
+          }
+        }) as unknown as Effect.Effect<void, unknown, never>,
+      )
+      .then((exit) => {
+        if (!Exit.isSuccess(exit)) {
+          console.error(
+            `meet subscription upkeep crashed (${reason}): ${Cause.pretty(exit.cause)}`,
+          );
+        }
+      });
+  };
+  void ensureMeetSubscriptions("boot");
 
   // Subscribe to the changes feed → mark search dirty on every event.
   const couch = yield* CouchClient.pipe(Effect.provide(couchLayer));
@@ -313,6 +433,24 @@ const main = Effect.gen(function* () {
 
     if (path === "/health" && method === "GET") {
       sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    // Brand assets. The connector's origin is this service (mcp.<domain>), so a
+    // favicon here is the one a Claude surface would fetch if it falls back to
+    // the connector origin; serverInfo.icons carries the same logo for clients
+    // that read MCP icon metadata directly.
+    if (path === "/favicon.ico" && method === "GET") {
+      sendImage(res, logoFavicon, "image/x-icon");
+      return;
+    }
+    if (
+      method === "GET" &&
+      (path === "/icon.png" ||
+        path === "/apple-touch-icon.png" ||
+        path === "/apple-touch-icon-precomposed.png")
+    ) {
+      sendImage(res, logoIcon, "image/png");
       return;
     }
 
@@ -481,6 +619,109 @@ const main = Effect.gen(function* () {
           // A client disconnect / aborted body rejects readBody; handle it so
           // the rejection isn't unhandled and the socket isn't left hanging.
           console.error(`recall webhook readBody failed: ${formatErr(err)}`);
+          if (!res.headersSent) {
+            sendJson(res, 400, { error: "read_error" });
+          }
+        });
+      return;
+    }
+
+    // Google Meet transcript webhook: a Pub/Sub push subscription delivers
+    // Workspace Events here (google.workspace.meet.transcript.v2.fileGenerated).
+    // Outside the OAuth-gated surface — Pub/Sub is not a Claude client — so
+    // it is verified by the OIDC token Pub/Sub mints for our push service
+    // account. Processing is synchronous so Cloud Run keeps CPU allocated;
+    // a non-2xx makes Pub/Sub redeliver with backoff, and the deterministic
+    // note path + existence pre-check make redeliveries idempotent.
+    if (path === "/meet/webhook" && method === "POST") {
+      if (!cfg.meet.enabled) {
+        sendJson(res, 404, {
+          error: "not_found",
+          error_description: "meet ingestion is disabled",
+        });
+        return;
+      }
+      void readBody(req)
+        .then(async (body) => {
+          const authorized = await verifyMeetPushToken(getHeader(req, "authorization"), {
+            audience: cfg.meet.pushAudience,
+            serviceAccount: cfg.meet.pushServiceAccount,
+          });
+          if (!authorized) {
+            console.warn("meet webhook: push token verification failed");
+            sendJson(res, 401, { error: "invalid_token" });
+            return;
+          }
+
+          const msg = parseMeetPushMessage(body);
+          // Google's expirationReminder/suspended lifecycle events are the
+          // renewal path that keeps the subscriptions alive without a cron.
+          // AWAIT the renewal before acking: once the response is sent,
+          // Cloud Run throttles CPU and background fetches stall.
+          if (msg.kind === "subscription-lifecycle") {
+            await ensureMeetSubscriptions("lifecycle");
+            sendJson(res, 200, { ok: true, lifecycle: msg.eventType });
+            return;
+          }
+          if (msg.kind === "ignored") {
+            sendJson(res, 200, { ok: true, ignored: msg.eventType });
+            return;
+          }
+
+          // A delivery for a transcript already being processed on this
+          // instance: answer non-2xx so Pub/Sub redelivers later. Acking it
+          // would drop the event for good if the in-flight attempt then
+          // failed before writing the note.
+          if (inFlightTranscripts.has(msg.transcriptName)) {
+            sendJson(res, 409, { error: "in_flight", error_description: msg.transcriptName });
+            return;
+          }
+          inFlightTranscripts.add(msg.transcriptName);
+
+          // Transcript deliveries double as a keep-alive: renew every
+          // account's subscription while this request keeps the CPU
+          // allocated (fire-and-forget alongside the ingestion below).
+          void ensureMeetSubscriptions("push");
+
+          void runtime
+            .runPromiseExit(
+              handleMeetTranscript({
+                transcriptName: msg.transcriptName,
+                targetHint: msg.targetHint,
+                folder: cfg.meet.transcriptsFolder,
+                digest: digestEnabled
+                  ? {
+                      todoNotePath: cfg.digest.todoNotePath,
+                      peopleFolder: cfg.digest.peopleFolder,
+                      selfName: cfg.digest.selfName,
+                    }
+                  : undefined,
+              }) as Effect.Effect<
+                { notePath: string; segments: number; account?: string; skipped?: string },
+                unknown,
+                never
+              >,
+            )
+            .then((exit) => {
+              inFlightTranscripts.delete(msg.transcriptName);
+              if (Exit.isSuccess(exit)) {
+                sendJson(res, 200, { ok: true, ...exit.value });
+                return;
+              }
+              const pretty = Cause.pretty(exit.cause);
+              console.error(`meet webhook processing failed: ${pretty}`);
+              sendJson(res, 500, { error: "processing_failed", error_description: pretty });
+            })
+            .catch((err) => {
+              inFlightTranscripts.delete(msg.transcriptName);
+              console.error(`meet webhook crashed: ${formatErr(err)}`);
+              if (!res.headersSent) {
+                sendJson(res, 500, { error: "server_error", error_description: String(err) });
+              }
+            });
+        })
+        .catch((err) => {
+          console.error(`meet webhook readBody failed: ${formatErr(err)}`);
           if (!res.headersSent) {
             sendJson(res, 400, { error: "read_error" });
           }

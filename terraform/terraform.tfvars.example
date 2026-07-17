@@ -62,3 +62,17 @@ mcp_allowed_emails = [
 # reachable only over the Cloudflare tunnel at indexer.<domain>, gated by
 # Cloudflare Access + a bearer token. Defaults are usually fine.
 # indexer_subdomain = "indexer"
+
+# ─── Meeting transcription (Phase 4) ────────────────────────────────────────
+# Recall.ai regional API host. Recall keys are region-scoped, so this MUST
+# match your Recall account's region (us-east-1, us-west-2, eu-central-1,
+# ap-northeast-1) — a mismatch 401/404s on every bot call.
+# recall_api_base = "https://us-west-2.recall.ai"
+
+# ─── Google Meet transcript ingestion (Phase 5) ─────────────────────────────
+# Master switch for zero-touch Meet transcript ingestion (+ Claude digest).
+# Leave false (the default) until the obsidian-mcp-meet-accounts secret
+# holds at least one account entry — mint entries per account with
+# scripts/obsidian-mcp/get-google-refresh-token.mjs — then flip to true,
+# re-apply, and redeploy. Full walkthrough: docs/obsidian-mcp/meet-ingestion.md.
+# meet_ingest_enabled = false

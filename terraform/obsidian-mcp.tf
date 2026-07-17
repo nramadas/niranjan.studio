@@ -268,6 +268,12 @@ resource "google_cloud_run_v2_service" "obsidian_mcp" {
 
     max_instance_request_concurrency = 10
 
+    # Meet webhook deliveries process synchronously (Google API fetches +
+    # note write + Claude digest) and the push subscription's ack deadline
+    # is 600s — the request timeout must match it, or Cloud Run kills the
+    # request at the 300s default while Pub/Sub still waits.
+    timeout = "600s"
+
     containers {
       image = "us-docker.pkg.dev/cloudrun/container/hello"
 
@@ -408,6 +414,47 @@ resource "google_cloud_run_v2_service" "obsidian_mcp" {
         }
       }
 
+      # ─── Phase 5: Google Meet transcript ingestion + digest ─────────
+      env {
+        name  = "MEET_INGEST_ENABLED"
+        value = var.meet_ingest_enabled ? "true" : "false"
+      }
+
+      env {
+        name  = "MEET_PUSH_AUDIENCE"
+        value = "https://${var.mcp_subdomain}.${var.domain}/meet/webhook"
+      }
+
+      env {
+        name  = "MEET_PUSH_SERVICE_ACCOUNT"
+        value = google_service_account.meet_push.email
+      }
+
+      env {
+        name  = "MEET_PUBSUB_TOPIC"
+        value = google_pubsub_topic.meet_events.id
+      }
+
+      env {
+        name = "MEET_ACCOUNTS_JSON"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.obsidian_mcp_meet_accounts.secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      env {
+        name = "ANTHROPIC_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.obsidian_mcp_anthropic_api_key.secret_id
+            version = "latest"
+          }
+        }
+      }
+
       env {
         name = "COUCHDB_PASSWORD"
         value_source {
@@ -499,6 +546,11 @@ resource "google_cloud_run_v2_service" "obsidian_mcp" {
     google_secret_manager_secret_version.obsidian_mcp_recall_api_key_placeholder,
     google_secret_manager_secret_version.obsidian_mcp_recall_webhook_secret_placeholder,
     google_secret_manager_secret_version.transcription_service_bearer,
+    # Phase 5: Meet ingestion + digest secrets.
+    google_secret_manager_secret_iam_member.obsidian_mcp_meet_accounts_accessor,
+    google_secret_manager_secret_iam_member.obsidian_mcp_anthropic_api_key_accessor,
+    google_secret_manager_secret_version.obsidian_mcp_meet_accounts_placeholder,
+    google_secret_manager_secret_version.obsidian_mcp_anthropic_api_key_placeholder,
   ]
 }
 

@@ -34,7 +34,7 @@ const stubRecallClient = {
   createBot: () => Effect.succeed({ id: "stub" }),
   getBot: () => Effect.succeed({ id: "stub" }),
   leaveCall: () => Effect.void,
-  getRecording: () => Effect.succeed({ participants: [] }),
+  getRecording: () => Effect.succeed({ participants: [], speakerTimeline: [] }),
   deleteMedia: () => Effect.void,
 };
 

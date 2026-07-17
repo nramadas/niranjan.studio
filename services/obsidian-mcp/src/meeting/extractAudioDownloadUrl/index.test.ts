@@ -16,6 +16,20 @@ describe("extractAudioDownloadUrl", () => {
     expect(url).toBe("https://x/audio.mp3");
   });
 
+  it("matches the configured audio_mixed_mp3 key even alongside another audio shortcut", () => {
+    const url = extractAudioDownloadUrl({
+      recordings: [
+        {
+          media_shortcuts: {
+            audio_separate_raw: { data: { download_url: "https://x/raw.wav" } },
+            audio_mixed_mp3: { data: { download_url: "https://x/mixed.mp3" } },
+          },
+        },
+      ],
+    });
+    expect(url).toBe("https://x/mixed.mp3");
+  });
+
   it("falls back to any audio-keyed shortcut", () => {
     const url = extractAudioDownloadUrl({
       recordings: [

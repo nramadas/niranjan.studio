@@ -5,7 +5,12 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "ignore": ["dist", "node_modules"]
+    "ignore": [
+      "dist",
+      "node_modules",
+      "src/branding/logoAssets/index.ts",
+      "src/branding/botCamera/index.ts"
+    ]
   },
   "formatter": {
     "enabled": true,

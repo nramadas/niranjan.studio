@@ -46,10 +46,21 @@ describe("allConfig", () => {
     expect(Redacted.value(out.indexer.bearer)).toBe("search-token");
     expect(out.indexer.timeoutMs).toBe(3000);
     expect(out.recall.apiBase).toBe("https://us-east-1.recall.ai");
-    expect(out.recall.botName).toBe("Meeting Transcriber");
+    expect(out.recall.botName).toBe("Niranjan's AI Assistant");
+    expect(out.recall.botImageEnabled).toBe(true);
     expect(Redacted.value(out.recall.apiKey)).toBe("recall-key");
     expect(out.transcription.url).toBe("https://transcription.example");
     expect(out.transcription.useIdToken).toBe(true);
+    // Meet ingestion + digest are optional add-ons: absent env vars must
+    // resolve to a disabled/empty config, not a boot failure.
+    expect(out.meet.enabled).toBe(false);
+    expect(out.meet.transcriptsFolder).toBe("Meetings");
+    expect(Redacted.value(out.meet.accountsJson)).toBe("");
+    expect(Redacted.value(out.digest.apiKey)).toBe("");
+    expect(out.digest.model).toBe("claude-opus-4-8");
+    expect(out.digest.selfName).toBe("Niranjan");
+    expect(out.digest.todoNotePath).toBe("TODO.md");
+    expect(out.digest.peopleFolder).toBe("People");
   });
 
   it("fails when any required field is missing", async () => {

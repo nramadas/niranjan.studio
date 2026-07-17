@@ -127,3 +127,11 @@ variable "recall_api_base" {
   description = "Recall.ai regional API host. Recall keys are region-scoped, so this MUST match your Recall account's region (us-east-1, us-west-2, eu-central-1, ap-northeast-1) — a mismatch returns 401/404 on every bot call."
   default     = "https://us-west-2.recall.ai"
 }
+
+# ─── Google Meet transcript ingestion (Phase 5) ─────────────────────────────
+
+variable "meet_ingest_enabled" {
+  type        = bool
+  description = "Enable Google Meet transcript ingestion on the MCP service (/meet/webhook + per-account Workspace Events subscription upkeep). Requires the obsidian-mcp-meet-accounts secret to hold at least one account entry first (see scripts/obsidian-mcp/get-google-refresh-token.mjs)."
+  default     = false
+}

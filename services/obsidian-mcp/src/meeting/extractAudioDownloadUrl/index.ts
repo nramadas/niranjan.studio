@@ -33,8 +33,10 @@ const urlOf = (s: MediaShortcut | undefined): string | undefined => {
 export const extractAudioDownloadUrl = (json: RecallBotResponse): string | undefined => {
   const recordings = json.recordings ?? [];
 
-  // 1. Prefer an explicit mixed-audio shortcut.
-  const preferredKeys = ["audio_mixed", "audio_separate_mp3", "audio"];
+  // 1. Prefer an explicit mixed-audio shortcut. `audio_mixed_mp3` is the key
+  // our recording_config requests (Recall mirrors recording_config keys into
+  // media_shortcuts verbatim), so match it exactly before the substring scan.
+  const preferredKeys = ["audio_mixed_mp3", "audio_mixed", "audio_separate_mp3", "audio"];
   for (const rec of recordings) {
     const shortcuts = rec.media_shortcuts ?? {};
     for (const key of preferredKeys) {

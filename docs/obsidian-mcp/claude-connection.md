@@ -10,6 +10,13 @@ Just one thing:
 
 That's it. No client ID, no client secret, no service tokens, no bearer tokens to copy. The OAuth dance handles credentials per-device, and dynamic client registration means you don't pre-create a client in any dashboard — Claude registers itself as a client the first time it connects.
 
+### Naming and the logo
+
+The server presents itself as **Sutra**: its `serverInfo` advertises that name, a `title`, and the logo (`services/obsidian-mcp/assets/logo.png`, inlined via `src/branding` and also served at `/favicon.ico` + `/icon.png`). But the label and icon you see in Claude's connector **list** are client-side:
+
+- **Name** — Claude shows whatever you type when adding the custom connector, so name it `Sutra` there. (It does not read `serverInfo.name`/`title` for the list label.)
+- **Icon** — Claude.ai does not yet render a custom connector's advertised `serverInfo.icons`; it shows a generic globe for all custom connectors. The logo we ship surfaces today in icon-aware MCP clients (e.g. MCP Inspector) and should appear in Claude automatically once that ships — no further change needed. The Google sign-in screen during setup *does* carry the brand if you set the OAuth consent screen's app name + logo (see [setup.md](setup.md) § 4).
+
 ## Web (claude.ai)
 
 1. **Settings → Connectors → Add custom connector** (or whatever the current label is — Claude's UI evolves).

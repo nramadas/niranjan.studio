@@ -19,6 +19,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.109.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@niranjan/vault-shared": "workspace:*",
     "effect": "^3.21.0",

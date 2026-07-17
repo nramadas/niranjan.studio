@@ -2,6 +2,7 @@ import { Vault } from "@niranjan/vault-shared/couchdb";
 import { Effect } from "effect";
 import { RecallClient } from "../RecallClient";
 import { TranscriptionClient } from "../TranscriptionClient";
+import { alignSpeakerNames } from "../alignSpeakerNames";
 import { buildMeetingNotePath, formatTranscript } from "../formatTranscript";
 
 export interface RecordingReadyInput {
@@ -83,6 +84,10 @@ export const handleRecordingReady = (input: RecordingReadyInput) =>
 
     const transcript = yield* transcription.transcribe({ url: recording.audioUrl }, true);
 
+    // Attribute each anonymous diarization index to a real participant by
+    // overlapping the transcript's segment times with Recall's speaker timeline.
+    const speakerNames = alignSpeakerNames(transcript.segments, recording.speakerTimeline);
+
     const formatted = formatTranscript(
       transcript.segments,
       {
@@ -94,6 +99,7 @@ export const handleRecordingReady = (input: RecordingReadyInput) =>
         durationSec: transcript.durationSec,
         participants: recording.participants,
         language: transcript.language,
+        speakerNames,
       },
       input.folder,
       input.date,

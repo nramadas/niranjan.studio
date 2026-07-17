@@ -49,6 +49,29 @@ describe("formatTranscript", () => {
     expect(out.body).toContain("**Speaker 1** (1:05): Hi there.");
   });
 
+  it("uses resolved participant names, falling back to numeric labels", () => {
+    const out = formatTranscript(
+      [
+        { speaker: 0, start: 0, end: 3, text: "Hello." },
+        { speaker: 1, start: 65, end: 70, text: "Hi there." },
+        { speaker: 2, start: 80, end: 82, text: "Who's that?" },
+      ],
+      {
+        ...meta,
+        speakerNames: new Map([
+          [0, "Alice"],
+          [1, "Bob"],
+        ]),
+      },
+      "Meetings",
+      "2026-06-18",
+    );
+    expect(out.body).toContain("**Alice** (0:00): Hello.");
+    expect(out.body).toContain("**Bob** (1:05): Hi there.");
+    // No timeline match for index 2 -> keep the numeric label.
+    expect(out.body).toContain("**Speaker 2** (1:20): Who's that?");
+  });
+
   it("notes when there was no speech", () => {
     const out = formatTranscript([], meta, "Meetings", "2026-06-18");
     expect(out.body).toContain("_No speech was detected in this recording._");

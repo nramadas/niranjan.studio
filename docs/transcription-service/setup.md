@@ -151,7 +151,8 @@ real (or test) Zoom/Meet/Teams meeting you host, then:
 
 > Send a transcription bot to this meeting: \<paste the meeting URL\>. Title it "Setup test".
 
-The bot should join as a visible participant named "Meeting Transcriber".
+The bot should join as a visible participant named "Niranjan's AI Assistant"
+(the `RECALL_BOT_NAME` default), showing the Sutra logo as its camera tile.
 End the call. Within a minute or two a note appears at
 `Meetings/<today> — Setup test.md` with speaker-labelled turns, and it shows
 up in `search_notes`.
@@ -166,13 +167,15 @@ overridable) because they vary by account/API version. Validate them on the
 first real run; if a transcript comes back empty, these are the usual cause:
 
 - The create-bot `recording_config` default is
-  `{"audio_mixed_mp3":{},"retention":{"type":"timed","hours":2}}`. If your API
-  version names the mixed-audio key differently, override it without a code
-  change via the `RECALL_RECORDING_CONFIG_JSON` env (set it in
+  `{"audio_mixed_mp3":{},"participant_events":{},"retention":{"type":"timed","hours":2}}`
+  (`participant_events` powers the speaker timeline used to put real names on
+  diarized turns). If your API version names these keys differently, override it
+  without a code change via the `RECALL_RECORDING_CONFIG_JSON` env (set it in
   `terraform/obsidian-mcp.tf` or the secret-free env block).
 - The audio download URL is extracted from the bot's `media_shortcuts`
-  (preferring `audio_mixed`). If empty transcripts persist, inspect a
-  `GET /api/v1/bot/<id>/` response and adjust `extractAudioDownloadUrl`.
+  (preferring `audio_mixed_mp3`, the configured key). If empty transcripts
+  persist, inspect a `GET /api/v1/bot/<id>/` response and adjust
+  `extractAudioDownloadUrl`.
 - The `leave_call` / `delete_media` endpoint paths follow Recall's documented
   v1 API.
 

@@ -91,14 +91,15 @@ This is a manual step in GCP Console. The MCP server uses Google as its OIDC ide
 
 1. **GCP Console → APIs & Services → OAuth consent screen** (if not already configured for this project):
    - User type: **External** (unless you have a Google Workspace, in which case Internal is simpler).
-   - App name: `Obsidian MCP` (or whatever you like; this is what your sign-in screen says).
+   - App name: `Sutra` — this is what the Google sign-in screen shows when you connect the connector, so it's the one place the "Sutra" brand reliably appears during setup.
+   - App logo: optionally upload `services/obsidian-mcp/assets/logo.png` so the sign-in screen carries the Sutra mark (non-sensitive scopes, so no app verification is required).
    - User support email: your email.
    - Add the emails from `mcp_allowed_emails` as **Test users** (External + unpublished apps reject anyone not in the test list).
    - Scopes: `openid` and `email`.
    - Save.
 2. **APIs & Services → Credentials → + Create Credentials → OAuth client ID:**
    - Application type: **Web application**.
-   - Name: `Obsidian MCP server`.
+   - Name: `Sutra` (this is just the client's label in the GCP console).
    - Authorized redirect URIs: `https://mcp.<your-domain>/oauth/google/callback` exactly.
    - Create. Copy the **client ID** and **client secret** that the dialog shows.
 
